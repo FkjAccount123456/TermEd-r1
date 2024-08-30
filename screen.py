@@ -36,3 +36,5 @@ class Screen:
             last = self.color[y][x]
             lastpos = y, x
         self.changed = set()
+        gotoxy(self.h + 1, 1)
+        print("\033[0m", end="")

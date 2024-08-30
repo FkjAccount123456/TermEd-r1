@@ -25,6 +25,8 @@ widths = [
     (120831, 1), (262141, 2), (1114109, 1),
 ]
 
+widthlist = []
+
 
 def get_width(o):
     # 参考了https://wenku.baidu.com/view/da48663551d380eb6294dd88d0d233d4b14e3f18.html?
@@ -32,11 +34,17 @@ def get_width(o):
     global widths
     o = o[-1]
     o = ord(o)
+    if o in widthlist:
+        return widthlist[o]
     if o == 0xe or o == 0xf:
+        widthlist[o] = 0
         return 0
     if o == 0x9:
+        widthlist[o] = 0
         return 8
     for num, wid in widths:
         if o <= num:
+            widthlist[o] = wid
             return wid
+    widthlist[o] = 1
     return 1
