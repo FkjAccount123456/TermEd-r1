@@ -25,7 +25,7 @@ widths = [
     (120831, 1), (262141, 2), (1114109, 1),
 ]
 
-widthlist = []
+widthlist = {}
 
 
 def get_width(o):

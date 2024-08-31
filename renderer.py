@@ -10,20 +10,25 @@ class Renderer:
     def change(self, ln: int):
         self.chs[ln] = True
         self.ukb = min(self.ukb, ln)
+        self.chs[ln] = True
 
     # [begin, end]
     def add(self, begin: int, end: int):
         assert begin <= len(self.sts)
         self.ukb = min(self.ukb, begin)
+        self.chs = (
+            self.chs[:begin] + [True for _ in range(begin, end + 1)] + self.chs[begin:]
+        )
 
     def rem(self, begin: int, end: int):
         assert end < len(self.sts)
         self.ukb = min(self.ukb, begin + 1)
+        del self.chs[begin : end + 1]
 
     def render(self, target: int): ...
 
-    def get(self, x: int, y: int) -> str:
-        return text
+    def get(self, y: int, x: int) -> str:
+        return "text"
 
 
 class Theme:
@@ -50,7 +55,13 @@ class Theme:
 default_theme = {
     "bg": 0,
     "text": 7,
+    "id": 7,
     "sel": 4,
     "cursor": 7,
     "num": 3,
+    "kw": 5,
+    "str": 2,
+    "const": 4,
+    "comment": 2,
+    "op": 6,
 }

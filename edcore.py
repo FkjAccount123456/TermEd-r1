@@ -5,6 +5,7 @@ from textinputer import TextInputer
 from msvcrt import getwch, kbhit
 from renderer import *
 from renderers.plaintext import PlainTextRenderer
+from renderers.python import PythonRenderer
 from utils import clear, flush, get_width, gotoxy
 import sys
 from pyperclip import copy, paste
@@ -35,7 +36,7 @@ class Editor:
         self.sely = self.selx = 0
 
         self.theme = Theme(default_theme)
-        self.renderer = PlainTextRenderer(self.text)
+        self.renderer = PythonRenderer(self.text)
 
         self.h, self.w = h, w
         self.text_h = h - 2
