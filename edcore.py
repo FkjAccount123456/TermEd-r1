@@ -48,13 +48,18 @@ class Editor:
 
         self.minibuf = ""
         self.minibuf_h = 1
+        
+        self.cmd_x = 0
 
         self.mode = "NORMAL"
+
+        self.tabsize = 4
 
         self.keymaps = {
             "NORMAL": {
                 "i": lambda: setattr(self, "mode", "INSERT"),
-                "\x03": lambda: setattr(self, "need_quit", True),
+                # Use :q instead of C-c to quit TermEd
+                # "\x03": lambda: setattr(self, "need_quit", True),
                 "P": lambda: self.textinputer.insert(self.y, self.x, paste()),
                 "p": self.paste_after_cursor,
                 "v": self.mode_select,
@@ -69,6 +74,9 @@ class Editor:
                     "g": lambda: self.move_cursor("head"),
                 },
                 "G": lambda: self.move_cursor("tail"),
+                "u": self.undo,
+                "\x12": self.redo,
+                ":": self.mode_cmd,
                 "\x00": {
                     "H": lambda: self.move_cursor("up"),
                     "P": lambda: self.move_cursor("down"),
@@ -93,6 +101,7 @@ class Editor:
                     "G": lambda: self.move_cursor("home"),
                     "O": lambda: self.move_cursor("end"),
                 },
+                "\x09": self.insert_tab,
             },
             "SELECT": {
                 "\x1b": lambda: setattr(self, "mode", "NORMAL"),
@@ -123,9 +132,97 @@ class Editor:
                     "O": lambda: self.move_cursor("end"),
                 },
             },
+            "COMMAND": {
+                "\x1b": self.quit_cmd,
+                "\x00": {
+                    "K": lambda: self.cmd_move_cursor("left"),
+                    "M": lambda: self.cmd_move_cursor("right"),
+                    "G": lambda: self.cmd_move_cursor("home"),
+                    "O": lambda: self.cmd_move_cursor("end"),
+                },
+                "\r": self.accept_cmd,
+                "\x08": self.del_cmd,
+            },
         }
 
+        self.save = None
+
         self.need_quit = False
+
+    def undo(self):
+        ret = self.textinputer.undo()
+        if ret:
+            self.y, self.x = ret
+            self.ideal_x = self.x
+
+    def redo(self):
+        ret = self.textinputer.redo()
+        if ret:
+            self.y, self.x = ret
+        self.ideal_x = self.x
+
+    def del_cmd(self):
+        self.minibuf = self.minibuf[:self.cmd_x] + self.minibuf[self.cmd_x + 1:]
+        self.cmd_x -= 1
+
+    def quit_cmd(self):
+        self.mode = "NORMAL"
+        self.minibuf = ""
+        self.cmd_x = 0
+
+    def mode_cmd(self):
+        self.mode = "COMMAND"
+        self.minibuf = ":"
+        self.cmd_x = 0
+
+    def open_file(self, arg):
+        if arg != '':
+            self.save = arg
+        try:
+            with open(self.save, "r", encoding="utf-8") as f:
+                text = f.read()
+            self.textinputer.clear()
+            self.textinputer.insert(0, 0, text)
+        except:
+            pass
+
+    def accept_cmd(self):
+        cmd = self.minibuf[1:]
+        splited = cmd.split(" ", 1)
+        while len(splited) < 2:
+            splited.append("")
+        head, arg = splited
+        if head == "w":
+            arg = arg.strip()
+            if arg == '' and self.save == None:
+                pass
+            else:
+                if arg:
+                    self.save = arg
+                with open(self.save, "w", encoding="utf-8") as f:
+                    f.write("\n".join(self.text))
+        elif head == "o":
+            arg = arg.strip()
+            self.open_file(arg)
+        elif head == "q":
+            self.need_quit = True
+        self.quit_cmd()
+
+    def cmd_move_cursor(self, d):
+        if d == "left":
+            if self.cmd_x > 0:
+                self.cmd_x -= 1
+        elif d == "right":
+            if self.cmd_x < len(self.minibuf) - 1:
+                self.cmd_x += 1
+        elif d == "home":
+            self.cmd_x = 0
+        elif d == "end":
+            self.cmd_x = len(self.minibuf) - 1
+
+    def insert_tab(self):
+        self.y, self.x = self.textinputer.insert(self.y, self.x, ' ' * self.tabsize)
+        self.ideal_x = self.x
 
     def paste_after_cursor(self):
         self.y, self.x = self.textinputer.insert(self.y, self.x, paste())
@@ -219,17 +316,21 @@ class Editor:
     def draw(self):
         # minibuf
         self.drawer.w = self.w - 1
-        self.minibuf_h = self.drawer.get_line_h(self.minibuf)
+        self.minibuf_h, ext = self.drawer.get_line_h(self.minibuf, True)
+        if ext >= self.w:
+            self.minibuf_h += 1
         starth = self.h - 1 - self.minibuf_h
         curh = 1
         curw = 0
+        curx = 0
         for ch in self.minibuf:
             chw = get_width(ch)
             if curw + chw > self.w:
                 curh += 1
                 curw = 0
             self.screen.change(
-                starth + curh, curw, ch, self.theme.get("text", False, False)
+                starth + curh, curw, ch, self.theme.get("text", False,
+                                                        self.mode == "COMMAND" and curx == self.cmd_x + 1)
             )
             curw += 1
             for _ in range(chw - 1):
@@ -237,17 +338,23 @@ class Editor:
                     starth + curh, curw, " ", self.theme.get("text", False, False)
                 )
                 curw += 1
+            curx += 1
+        if curw >= self.w:
+            curw = 0
+            curh += 1
         while curw < self.w:
             self.screen.change(
-                starth + curh, curw, " ", self.theme.get("text", False, False)
+                starth + curh, curw, " ", self.theme.get("text", False,
+                                                         self.mode == "COMMAND" and curx == self.cmd_x + 1)
             )
             curw += 1
+            curx += 1
 
         # self.linum_w = max(len(str(len(self.text))) + 1, 2)
 
         # text
         # self.drawer.w = self.text_w - self.linum_w
-        # self.drawer.h = self.h - 1 - self.minibuf_h
+        self.drawer.h = self.h - 1 - self.minibuf_h
         # self.drawer.shw = self.linum_w
         if self.mode == "SELECT" and (self.sely, self.selx) <= (self.y, self.x):
             self.drawer.draw(
@@ -271,12 +378,22 @@ class Editor:
         flush()
 
         # modeline
-        gotoxy(self.h - self.minibuf_h, 1)
-        print(" " * self.w, end="")
-        gotoxy(self.h - self.minibuf_h, 1)
-        print(
-            f" {self.mode}  ln: {self.y + 1} col: {self.x + 1} scroll: {self.drawer.scry + 1}+{self.drawer.scrys}"
-        )
+        # gotoxy(self.h - self.minibuf_h, 1)
+        # print(" " * self.w, end="")
+        # gotoxy(self.h - self.minibuf_h, 1)
+        modeline = f" {self.mode}  save: {self.save}  ln: {self.y + 1} col: {self.x + 1} scroll: {self.drawer.scry + 1}+{self.drawer.scrys}"
+        # gotoxy(self.h - 2, 1)
+        # print(self.minibuf_h)
+        sh = 0
+        for ch in modeline:
+            self.screen.change(self.h - self.minibuf_h - 1, sh, ch, self.theme.get("text", False, False))
+            sh += 1
+            for _ in range(get_width(ch) - 1):
+                self.screen.change(self.h - self.minibuf_h - 1, sh, "", self.theme.get("text", False, False))
+                sh += 1
+        while sh < self.w:
+            self.screen.change(self.h - self.minibuf_h - 1, sh, " ", self.theme.get("text", False, False))
+            sh += 1
 
         # 或许可以和text一块绘制
         """# linum
@@ -310,6 +427,8 @@ class Editor:
 
     def mainloop(self):
         while not self.need_quit:
+            # 只有绘制两遍能保证完全正确、、、
+            self.draw()
             self.draw()
             key = getch()
             if key in self.keymaps[self.mode]:
@@ -328,11 +447,16 @@ class Editor:
             elif self.mode == "INSERT" and (key == "\r" or key == "\n"):
                 self.y, self.x = self.textinputer.insert(self.y, self.x, "\n")
                 self.ideal_x = self.x
+            elif self.mode == "COMMAND" and key.isprintable():
+                self.minibuf = self.minibuf[:self.cmd_x + 1] + key + self.minibuf[self.cmd_x + 1:]
+                self.cmd_x += 1
 
 
 print("\033[?25l")
 clear()
 editor = Editor(get_terminal_size().lines, get_terminal_size().columns - 1)
+if len(sys.argv) == 2:
+    editor.open_file(sys.argv[1])
 editor.mainloop()
 # print(editor.text)
 print("\033[?25h")

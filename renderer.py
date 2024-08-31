@@ -36,7 +36,10 @@ class Theme:
         self.d = d
 
     def format(self, bg, fg):
-        return f"\033[1;3{fg};4{bg}m"
+        if use_darker:
+            return f"\033[0;3{fg};4{bg}m"
+        else:
+            return f"\033[1;3{fg};4{bg}m"
 
     def get(self, token: str, insel: bool, incursor: bool):
         if incursor:
@@ -58,6 +61,7 @@ default_theme = {
     "id": 7,
     "sel": 4,
     "cursor": 7,
+    "linum": 3,
     "num": 3,
     "kw": 5,
     "str": 2,
@@ -65,3 +69,22 @@ default_theme = {
     "comment": 2,
     "op": 6,
 }
+
+textmate_theme = {
+    "bg": 7,
+    "text": 0,
+    "id": 0,
+    "sel": 4,
+    "cursor": 0,
+    "linum": 0,
+    "num": 4,
+    "kw": 4,
+    "str": 2,
+    "const": 4,
+    "comment": 2,
+    "op": 0,
+}
+
+default_theme = textmate_theme
+
+use_darker = True

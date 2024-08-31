@@ -33,7 +33,7 @@ class Drawer:
         self.scrline = 0
         self.linum = linum
 
-    def get_line_h(self, line):
+    def get_line_h(self, line, opt=False):
         w = 0
         h = 1
         for ch in line:
@@ -44,7 +44,10 @@ class Drawer:
             w += ch_w
         # gotoxy(self.h, 20)
         # print(line, h, " " * 20)
-        return h
+        if opt:
+            return h, w
+        else:
+            return h
 
     # 这里使用generator是个好想法
     # 这才叫优雅
@@ -128,11 +131,11 @@ class Drawer:
                     if cys == 0:
                         linum = f"%{self.linum_w - 1}d " % (cy + 1)
                         for ch in linum:
-                            self.screen.change(self.shh + scrcnt, self.shw + cursh, ch, self.theme.get("num", False, False))
+                            self.screen.change(self.shh + scrcnt, self.shw + cursh, ch, self.theme.get("linum", False, False))
                             cursh += 1
                     else:
                         while cursh < self.linum_w:
-                            self.screen.change(self.shh + scrcnt, self.shw + cursh, " ", self.theme.get("num", False, False))
+                            self.screen.change(self.shh + scrcnt, self.shw + cursh, " ", self.theme.get("linum", False, False))
                             cursh += 1
                 i = -1
                 for i in range(curln[cys], curln[cys + 1]):
