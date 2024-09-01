@@ -1,4 +1,6 @@
 from colorama import Fore, Back, Style
+from renderers.plaintext import PlainTextRenderer
+from renderers.python import PythonRenderer
 
 
 class Renderer:
@@ -88,3 +90,11 @@ textmate_theme = {
 default_theme = textmate_theme
 
 use_darker = True
+
+renderers = {
+    "py": PythonRenderer,
+}
+
+
+def getRenderer(ft: str):
+    return renderers.get(ft, PlainTextRenderer)

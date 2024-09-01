@@ -1,11 +1,10 @@
 from os import get_terminal_size
+import os.path
 from drawer import Drawer
 from screen import Screen
 from textinputer import TextInputer
 from msvcrt import getwch, kbhit
 from renderer import *
-from renderers.plaintext import PlainTextRenderer
-from renderers.python import PythonRenderer
 from utils import clear, flush, get_width, gotoxy
 import sys
 from pyperclip import copy, paste
