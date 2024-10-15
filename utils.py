@@ -1,4 +1,5 @@
 import os
+import time
 
 
 def clear():
@@ -48,3 +49,25 @@ def get_width(o):
             return wid
     widthlist[o] = 1
     return 1
+
+
+def get_file_ext(f: str):
+    return f[f.rfind('.') + 1:]
+
+
+def log(s):
+    with open("termed.log", "a", encoding="utf8") as f:
+        f.write(s + " " + time.strftime("%Y-%m-%d %H:%M:%S") + "\n")
+
+
+def colorcvt(fg: int | tuple[int, int, int]):
+    if isinstance(fg, int):
+        return fg // (256 * 256), fg % (256 * 256) // 256, fg % 256
+    return fg
+
+
+def cvt_truecolor(fg: tuple[int, int, int], bg: tuple[int, int, int]):
+    if bg == (0, 0, 0):
+        return f"\033[38;2;{fg[0]};{fg[1]};{fg[2]}m"
+    else:
+        return f"\033[38;2;{fg[0]};{fg[1]};{fg[2]}m\033[48;2;{bg[0]};{bg[1]};{bg[2]}m"

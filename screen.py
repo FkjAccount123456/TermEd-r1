@@ -20,6 +20,11 @@ class Screen:
             self.data[y][x] = ch
             self.color[y][x] = color
 
+    def fill(self, ch: str, color: str):
+        for y in range(self.h):
+            for x in range(self.w):
+                self.change(y, x, ch, color)
+
     def refresh(self):
         print("\033[0m", end="")
         gotoxy(1, 1)

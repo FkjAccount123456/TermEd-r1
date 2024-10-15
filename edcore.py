@@ -2,11 +2,10 @@ from os import get_terminal_size
 from drawer import Drawer
 from screen import Screen
 from textinputer import TextInputer
-from msvcrt import getwch, kbhit
+from msvcrt import getwch
 from renderer import *
-from renderers.plaintext import PlainTextRenderer
-from renderers.python import PythonRenderer
-from utils import clear, flush, get_width, gotoxy
+from renderers.renderers import get_renderer
+from utils import clear, flush, get_width, get_file_ext, log, gotoxy
 import sys
 from pyperclip import copy, paste
 
@@ -36,19 +35,26 @@ class Editor:
         self.sely = self.selx = 0
 
         self.theme = Theme(default_theme)
-        self.renderer = PythonRenderer(self.text)
+        self.renderer = get_renderer()(self.text)
 
         self.h, self.w = h, w
         self.text_h = h - 2
         self.text_w = w - 1
         self.drawer = Drawer(
-            self.screen, self.text, 0, 0, self.text_h, self.text_w, self.theme, True,
+            self.screen,
+            self.text,
+            0,
+            0,
+            self.text_h,
+            self.text_w,
+            self.theme,
+            True,
         )
         # self.linum_w = 2
 
         self.minibuf = ""
         self.minibuf_h = 1
-        
+
         self.cmd_x = 0
 
         self.mode = "NORMAL"
@@ -162,7 +168,7 @@ class Editor:
         self.ideal_x = self.x
 
     def del_cmd(self):
-        self.minibuf = self.minibuf[:self.cmd_x] + self.minibuf[self.cmd_x + 1:]
+        self.minibuf = self.minibuf[: self.cmd_x] + self.minibuf[self.cmd_x + 1 :]
         self.cmd_x -= 1
 
     def quit_cmd(self):
@@ -176,15 +182,28 @@ class Editor:
         self.cmd_x = 0
 
     def open_file(self, arg):
-        if arg != '':
+        if arg != "":
             self.save = arg
-        try:
-            with open(self.save, "r", encoding="utf-8") as f:
-                text = f.read()
-            self.textinputer.clear()
-            self.textinputer.insert(0, 0, text)
-        except:
-            pass
+        if isinstance(self.save, str):
+            try:
+                with open(self.save, "r", encoding="utf-8") as f:
+                    text = f.read()
+                self.textinputer.clear()
+                self.textinputer.insert(0, 0, text)
+                self.drawer = Drawer(
+                    self.screen,
+                    self.text,
+                    0,
+                    0,
+                    self.text_h,
+                    self.text_w,
+                    self.theme,
+                    True,
+                )
+                self.y = self.ideal_x = self.x = 0
+            except FileNotFoundError:
+                pass
+            self.renderer = get_renderer(get_file_ext(self.save))(self.text)
 
     def accept_cmd(self):
         cmd = self.minibuf[1:]
@@ -194,19 +213,26 @@ class Editor:
         head, arg = splited
         if head == "w":
             arg = arg.strip()
-            if arg == '' and self.save == None:
+            if arg == "" and self.save == None:
                 pass
             else:
                 if arg:
                     self.save = arg
-                with open(self.save, "w", encoding="utf-8") as f:
-                    f.write("\n".join(self.text))
+                if isinstance(self.save, str):
+                    try:
+                        with open(self.save, "w", encoding="utf-8") as f:
+                            f.write("\n".join(self.text))
+                    except:
+                        pass
         elif head == "o":
             arg = arg.strip()
             self.open_file(arg)
         elif head == "q":
-            self.need_quit = True
+            self.quit()
         self.quit_cmd()
+
+    def quit(self):
+        self.need_quit = True
 
     def cmd_move_cursor(self, d):
         if d == "left":
@@ -221,7 +247,7 @@ class Editor:
             self.cmd_x = len(self.minibuf) - 1
 
     def insert_tab(self):
-        self.y, self.x = self.textinputer.insert(self.y, self.x, ' ' * self.tabsize)
+        self.y, self.x = self.textinputer.insert(self.y, self.x, " " * self.tabsize)
         self.ideal_x = self.x
 
     def paste_after_cursor(self):
@@ -316,7 +342,7 @@ class Editor:
     def draw(self):
         # minibuf
         self.drawer.w = self.w - 1
-        self.minibuf_h, ext = self.drawer.get_line_h(self.minibuf, True)
+        self.minibuf_h, ext = self.drawer.get_line_hw(self.minibuf)
         if ext >= self.w:
             self.minibuf_h += 1
         starth = self.h - 1 - self.minibuf_h
@@ -329,8 +355,12 @@ class Editor:
                 curh += 1
                 curw = 0
             self.screen.change(
-                starth + curh, curw, ch, self.theme.get("text", False,
-                                                        self.mode == "COMMAND" and curx == self.cmd_x + 1)
+                starth + curh,
+                curw,
+                ch,
+                self.theme.get(
+                    "text", False, self.mode == "COMMAND" and curx == self.cmd_x + 1
+                ),
             )
             curw += 1
             for _ in range(chw - 1):
@@ -344,8 +374,12 @@ class Editor:
             curh += 1
         while curw < self.w:
             self.screen.change(
-                starth + curh, curw, " ", self.theme.get("text", False,
-                                                         self.mode == "COMMAND" and curx == self.cmd_x + 1)
+                starth + curh,
+                curw,
+                " ",
+                self.theme.get(
+                    "text", False, self.mode == "COMMAND" and curx == self.cmd_x + 1
+                ),
             )
             curw += 1
             curx += 1
@@ -386,13 +420,28 @@ class Editor:
         # print(self.minibuf_h)
         sh = 0
         for ch in modeline:
-            self.screen.change(self.h - self.minibuf_h - 1, sh, ch, self.theme.get("text", False, False))
+            self.screen.change(
+                self.h - self.minibuf_h - 1,
+                sh,
+                ch,
+                self.theme.get("text", False, False),
+            )
             sh += 1
             for _ in range(get_width(ch) - 1):
-                self.screen.change(self.h - self.minibuf_h - 1, sh, "", self.theme.get("text", False, False))
+                self.screen.change(
+                    self.h - self.minibuf_h - 1,
+                    sh,
+                    "",
+                    self.theme.get("text", False, False),
+                )
                 sh += 1
         while sh < self.w:
-            self.screen.change(self.h - self.minibuf_h - 1, sh, " ", self.theme.get("text", False, False))
+            self.screen.change(
+                self.h - self.minibuf_h - 1,
+                sh,
+                " ",
+                self.theme.get("text", False, False),
+            )
             sh += 1
 
         # 或许可以和text一块绘制
@@ -448,15 +497,25 @@ class Editor:
                 self.y, self.x = self.textinputer.insert(self.y, self.x, "\n")
                 self.ideal_x = self.x
             elif self.mode == "COMMAND" and key.isprintable():
-                self.minibuf = self.minibuf[:self.cmd_x + 1] + key + self.minibuf[self.cmd_x + 1:]
+                self.minibuf = (
+                    self.minibuf[: self.cmd_x + 1]
+                    + key
+                    + self.minibuf[self.cmd_x + 1 :]
+                )
                 self.cmd_x += 1
+
+        editor.screen.fill(' ', "\033[0m")
+        editor.screen.refresh()
 
 
 print("\033[?25l")
-clear()
+for i in range(get_terminal_size().lines - 3):
+    print()
 editor = Editor(get_terminal_size().lines, get_terminal_size().columns - 1)
 if len(sys.argv) == 2:
     editor.open_file(sys.argv[1])
+log("editor main")
 editor.mainloop()
 # print(editor.text)
 print("\033[?25h")
+gotoxy(1, 1)

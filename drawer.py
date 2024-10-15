@@ -3,8 +3,7 @@
 """
 
 from screen import Screen
-import screen
-from utils import get_width, gotoxy, clear, flush
+from utils import get_width
 from renderer import *
 
 
@@ -33,7 +32,7 @@ class Drawer:
         self.scrline = 0
         self.linum = linum
 
-    def get_line_h(self, line, opt=False):
+    def get_line_h(self, line):
         w = 0
         h = 1
         for ch in line:
@@ -44,10 +43,20 @@ class Drawer:
             w += ch_w
         # gotoxy(self.h, 20)
         # print(line, h, " " * 20)
-        if opt:
-            return h, w
-        else:
-            return h
+        return h
+
+    def get_line_hw(self, line):
+        w = 0
+        h = 1
+        for ch in line:
+            ch_w = get_width(ch)
+            if w + ch_w > self.w:
+                h += 1
+                w = 0
+            w += ch_w
+        # gotoxy(self.h, 20)
+        # print(line, h, " " * 20)
+        return h, w
 
     # 这里使用generator是个好想法
     # 这才叫优雅

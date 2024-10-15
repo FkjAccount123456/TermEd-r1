@@ -1,11 +1,14 @@
 from colorama import Fore, Back, Style
 
+from utils import colorcvt, cvt_truecolor
+
 
 class Renderer:
     def __init__(self, text: list[str]):
         self.text = text
         self.ukb = 0  # Unknown-begin [0, ukb)
         self.chs = [False for _ in range(len(self.text))]  # Changes
+        self.sts = []
 
     def change(self, ln: int):
         self.chs[ln] = True
@@ -34,12 +37,11 @@ class Renderer:
 class Theme:
     def __init__(self, d: dict):
         self.d = d
+        for i in self.d:
+            self.d[i] = colorcvt(self.d[i][0]), colorcvt(self.d[i][1])
 
-    def format(self, bg, fg):
-        if use_darker:
-            return f"\033[0;3{fg};4{bg}m"
-        else:
-            return f"\033[1;3{fg};4{bg}m"
+    def format(self, base, text):
+        return cvt_truecolor(text[1], base[0])
 
     def get(self, token: str, insel: bool, incursor: bool):
         if incursor:
@@ -50,41 +52,20 @@ class Theme:
             if self.d[token] == self.d["sel"]:
                 return self.format(self.d["sel"], self.d["bg"])
             return self.format(self.d["sel"], self.d[token])
-        if self.d["bg"] == 0 and self.d[token] == 7:
-            return ""
         return self.format(self.d["bg"], self.d[token])
 
 
 default_theme = {
-    "bg": 0,
-    "text": 7,
-    "id": 7,
-    "sel": 4,
-    "cursor": 7,
-    "linum": 3,
-    "num": 3,
-    "kw": 5,
-    "str": 2,
-    "const": 4,
-    "comment": 2,
-    "op": 6,
+    "bg": (0x282828, 0x000000),
+    "text": (0x282828, 0xEBDBB2),
+    "id": (0x282828, 0xEBDBB2),
+    "sel": (0x3C3836, 0x000000),
+    "cursor": (0xEBDBB2, 0xEBDBB2),
+    "linum": (0x282828, 0x928374),
+    "num": (0x282828, 0xD3869B),
+    "kw": (0x282828, 0xFB4934),
+    "str": (0x282828, 0xB8BB26),
+    "const": (0x282828, 0xFABD2F),
+    "comment": (0x282828, 0x928374),
+    "op": (0x282828, 0xEBDBB2),
 }
-
-textmate_theme = {
-    "bg": 7,
-    "text": 0,
-    "id": 0,
-    "sel": 4,
-    "cursor": 0,
-    "linum": 0,
-    "num": 4,
-    "kw": 4,
-    "str": 2,
-    "const": 4,
-    "comment": 2,
-    "op": 0,
-}
-
-default_theme = textmate_theme
-
-use_darker = True

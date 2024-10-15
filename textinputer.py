@@ -2,7 +2,6 @@
 简单才高效
 """
 
-from utils import gotoxy
 from enum import Enum, unique
 from typing import NamedTuple
 
@@ -36,7 +35,7 @@ class TextInputer:
                 return self.insert(*hs.begin, hs.text, True)
             else:
                 return self.delete(*hs.begin, *hs.end, True)
-    
+
     def redo(self):
         if self.hs_pos < len(self.history):
             hs = self.history[self.hs_pos]
@@ -54,6 +53,7 @@ class TextInputer:
 
     def insert(self, y: int, x: int, text: str, is_do=False):
         assert y < len(self.text) and x <= len(self.text[y])
+        begin = 0, 0
         if not is_do:
             begin = y, x
         yb = y
@@ -83,8 +83,8 @@ class TextInputer:
             else:
                 end[0] -= 1
                 end[1] = len(self.text[end[0]])
-            del self.history[self.hs_pos:]
-            self.history.append(History(HistoryType.Insert, begin, tuple(end), text))
+            del self.history[self.hs_pos :]
+            self.history.append(History(HistoryType.Insert, begin, (end[0], end[1]), text))
             self.hs_pos += 1
         return y, x
 
@@ -93,8 +93,10 @@ class TextInputer:
             y, x, q, p = q, p, y, x
         assert q < len(self.text) and p <= len(self.text[q])
         if not is_do:
-            del self.history[self.hs_pos:]
-            self.history.append(History(HistoryType.Delete, (y, x), (q, p), self.get(y, x, q, p)))
+            del self.history[self.hs_pos :]
+            self.history.append(
+                History(HistoryType.Delete, (y, x), (q, p), self.get(y, x, q, p))
+            )
             self.hs_pos += 1
         self.parent.renderer.change(y)
         self.parent.renderer.rem(y + 1, q)
