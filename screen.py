@@ -3,14 +3,17 @@ from utils import *
 
 class Screen:
     def __init__(self, h: int, w: int):
-        self.h, self.w = h, w
-        self.data = [[" " for i in range(w)] for j in range(h)]
-        self.color = [["" for i in range(w)] for j in range(h)]
+        self.update_size(h, w)
         self.changed: set[Pos] = set()
 
         gotoxy(1, 1)
         for i in range(h):
             print(" " * self.w)
+
+    def update_size(self, h: int, w: int):
+        self.h, self.w = h, w
+        self.data = [[" " for i in range(w)] for j in range(h)]
+        self.color = [["" for i in range(w)] for j in range(h)]
 
     def change(self, y: int, x: int, ch: str, color: str):
         if y < 0 or x < 0 or y >= self.h or x >= self.w:

@@ -2,7 +2,7 @@ from os import get_terminal_size
 from drawer import Drawer
 from screen import Screen
 from textinputer import TextInputer
-from msvcrt import getwch
+from msvcrt import getwch, kbhit
 from renderer import *
 from renderers.renderers import get_renderer
 from utils import clear, flush, get_width, get_file_ext, log, gotoxy
@@ -180,8 +180,9 @@ class Editor:
             self.ideal_x = self.x
 
     def del_cmd(self):
-        self.minibuf = self.minibuf[: self.cmd_x] + self.minibuf[self.cmd_x + 1 :]
-        self.cmd_x -= 1
+        if len(self.minibuf) > 1:
+            self.minibuf = self.minibuf[: self.cmd_x] + self.minibuf[self.cmd_x + 1 :]
+            self.cmd_x -= 1
 
     def quit_cmd(self):
         self.mode = "NORMAL"
@@ -609,50 +610,52 @@ class Editor:
         self.text_w = self.w - 1
         self.text_h = self.h - 2
         self.drawer.update_size()
+        self.screen.update_size(self.h, self.w)
 
     def mainloop(self):
         while not self.need_quit:
             # 只有绘制两遍能保证完全正确、、、
             # 2025-1-30 原来竟是一个flush放错了位置（
+            # self.draw()
             self.update_size()
             self.draw()
-            # self.draw()
-            key = getch()
-            if self.mode != 'INSERT':
-                if key != '0' and key.isdigit():
-                    n = 0
-                    while key.isdigit():
-                        n *= 10
-                        n += ord(key) - ord('0')
+            if kbhit():
+                key = getch()
+                if self.mode != 'INSERT':
+                    if key != '0' and key.isdigit():
+                        n = 0
+                        while key.isdigit():
+                            n *= 10
+                            n += ord(key) - ord('0')
+                            key = getch()
+                    else:
+                        n = -1
+                if key in self.keymaps[self.mode]:
+                    x = self.keymaps[self.mode][key]
+                    while isinstance(x, dict):
                         key = getch()
-                else:
-                    n = -1
-            if key in self.keymaps[self.mode]:
-                x = self.keymaps[self.mode][key]
-                while isinstance(x, dict):
-                    key = getch()
-                    if key in x:
-                        x = x[key]
-                    else:
-                        break
-                if callable(x):
-                    if n != -1:
-                        x(n)
-                    else:
-                        x()
-            elif self.mode == "INSERT" and key.isprintable():
-                self.y, self.x = self.textinputer.insert(self.y, self.x, key)
-                self.ideal_x = self.x
-            elif self.mode == "INSERT" and (key == "\r" or key == "\n"):
-                self.y, self.x = self.textinputer.insert(self.y, self.x, "\n")
-                self.ideal_x = self.x
-            elif self.mode == "COMMAND" and key.isprintable():
-                self.minibuf = (
-                    self.minibuf[: self.cmd_x + 1]
-                    + key
-                    + self.minibuf[self.cmd_x + 1 :]
-                )
-                self.cmd_x += 1
+                        if key in x:
+                            x = x[key]
+                        else:
+                            break
+                    if callable(x):
+                        if n != -1:
+                            x(n)
+                        else:
+                            x()
+                elif self.mode == "INSERT" and key.isprintable():
+                    self.y, self.x = self.textinputer.insert(self.y, self.x, key)
+                    self.ideal_x = self.x
+                elif self.mode == "INSERT" and (key == "\r" or key == "\n"):
+                    self.y, self.x = self.textinputer.insert(self.y, self.x, "\n")
+                    self.ideal_x = self.x
+                elif self.mode == "COMMAND" and key.isprintable():
+                    self.minibuf = (
+                        self.minibuf[: self.cmd_x + 1]
+                        + key
+                        + self.minibuf[self.cmd_x + 1 :]
+                    )
+                    self.cmd_x += 1
 
         editor.screen.fill(' ', "\033[0m")
         editor.screen.refresh()
