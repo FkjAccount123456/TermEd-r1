@@ -606,19 +606,21 @@ class Editor:
             movecnt += 1"""
 
     def update_size(self):
-        self.w, self.h = get_terminal_size()
-        self.text_w = self.w - 1
-        self.text_h = self.h - 2
-        self.drawer.update_size()
-        self.screen.update_size(self.h, self.w)
+        if (self.w, self.h) != (new_size := get_terminal_size()):
+            self.w, self.h = get_terminal_size()
+            self.text_w = self.w - 1
+            self.text_h = self.h - 2
+            self.drawer.update_size()
+            self.screen.update_size(self.h, self.w)
+            return True
 
     def mainloop(self):
         while not self.need_quit:
             # 只有绘制两遍能保证完全正确、、、
             # 2025-1-30 原来竟是一个flush放错了位置（
             # self.draw()
-            self.update_size()
-            self.draw()
+            if self.update_size():
+                self.draw()
             if kbhit():
                 key = getch()
                 if self.mode != 'INSERT':
@@ -656,6 +658,8 @@ class Editor:
                         + self.minibuf[self.cmd_x + 1 :]
                     )
                     self.cmd_x += 1
+
+                self.draw()
 
         editor.screen.fill(' ', "\033[0m")
         editor.screen.refresh()

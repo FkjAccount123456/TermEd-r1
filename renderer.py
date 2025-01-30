@@ -55,7 +55,7 @@ class Theme:
         return self.format(self.d["bg"], self.d[token])
 
 
-default_theme = {
+gruvbox_theme = {
     "bg": (0x282828, 0x000000),
     "text": (0x282828, 0xEBDBB2),
     "id": (0x282828, 0xEBDBB2),
@@ -69,3 +69,20 @@ default_theme = {
     "comment": (0x282828, 0x928374),
     "op": (0x282828, 0xEBDBB2),
 }
+
+onedark_theme = {
+    "bg": (0x282C34, 0x000000),
+    "text": (0x282C34, 0xABB2BF),
+    "id": (0x282C34, 0xABB2BF),
+    "sel": (0x3E4452, 0x000000),
+    "cursor": (0x528BFF, 0x528BFF),
+    "linum": (0x282C34, 0x495162),
+    "num": (0x282C34, 0xD19A66),
+    "kw": (0x282C34, 0xC678DD),
+    "str": (0x282C34, 0x98C379),
+    "const": (0x282C34, 0xC678DD),
+    "comment": (0x282C34, 0x5C6370),
+    "op": (0x282C34, 0xABB2BF),
+}
+
+default_theme = onedark_theme
