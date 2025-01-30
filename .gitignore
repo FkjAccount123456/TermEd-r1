@@ -2,5 +2,7 @@
 *.swp
 tags
 __pycache__/
+renderers/__pycache__/
 chat.txt
 *.log
+*.ps1

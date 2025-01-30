@@ -18,19 +18,22 @@ class Drawer:
         text: list[str],
         shh: int,
         shw: int,
-        h: int,
-        w: int,
         theme: Theme,
         linum: bool,
     ):
         self.screen = screen
         self.text = text
         self.theme = theme
-        self.full_w = w
-        self.shh, self.shw, self.h, self.w = shh, shw, h, w
+        self.shh, self.shw = shh, shw
         self.scry, self.scrys = 0, 0
         self.scrline = 0
         self.linum = linum
+        self.update_size()
+
+    def update_size(self):
+        w, h = self.screen.w, self.screen.h
+        self.full_w = w
+        self.h, self.w = h, w
 
     def get_line_h(self, line):
         w = 0

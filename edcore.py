@@ -45,8 +45,6 @@ class Editor:
             self.text,
             0,
             0,
-            self.text_h,
-            self.text_w,
             self.theme,
             True,
         )
@@ -168,14 +166,14 @@ class Editor:
         self.need_quit = False
 
     def undo(self, n: int = 1):
-        for i in range(n):
+        for _ in range(n):
             ret = self.textinputer.undo()
             if ret:
                 self.y, self.x = ret
                 self.ideal_x = self.x
 
     def redo(self, n: int = 1):
-        for i in range(n):
+        for _ in range(n):
             ret = self.textinputer.redo()
             if ret:
                 self.y, self.x = ret
@@ -209,8 +207,6 @@ class Editor:
                     self.text,
                     0,
                     0,
-                    self.text_h,
-                    self.text_w,
                     self.theme,
                     True,
                 )
@@ -306,7 +302,7 @@ class Editor:
         self.ideal_x = self.x
 
     def cursor_left(self, n: int = 1):
-        for i in range(n):
+        for _ in range(n):
             if self.x:
                 self.x -= 1
             else:
@@ -314,7 +310,7 @@ class Editor:
         self.ideal_x = self.x
 
     def cursor_right(self, n: int = 1):
-        for i in range(n):
+        for _ in range(n):
             if self.x < len(self.text[self.y]):
                 self.x += 1
             else:
@@ -322,7 +318,7 @@ class Editor:
         self.ideal_x = self.x
 
     def cursor_up(self, n: int = 1):
-        for i in range(n):
+        for _ in range(n):
             if self.y:
                 self.y -= 1
             else:
@@ -330,7 +326,7 @@ class Editor:
         self.x = min(len(self.text[self.y]), self.ideal_x)
 
     def cursor_down(self, n: int = 1):
-        for i in range(n):
+        for _ in range(n):
             if self.y + 1 < len(self.text):
                 self.y += 1
             else:
@@ -344,7 +340,7 @@ class Editor:
         self.x = len(self.text[self.y])
 
     def cursor_pageup(self, n: int = 1):
-        for i in range(n):
+        for _ in range(n):
             self.y, _ = self.drawer.scroll(
                 self.y,
                 self.drawer.get_line_h(self.text[self.y][: self.x]) - 1,
@@ -354,7 +350,7 @@ class Editor:
         self.x = min(len(self.text[self.y]), self.ideal_x)
 
     def cursor_pagedown(self, n: int = 1):
-        for i in range(n):
+        for _ in range(n):
             self.y, _ = self.drawer.scroll(
                 self.y,
                 self.drawer.get_line_h(self.text[self.y][: self.x]) - 1,
@@ -364,13 +360,12 @@ class Editor:
         self.x = min(len(self.text[self.y]), self.ideal_x)
 
     def cursor_start(self, n: int = 1):
-        for i in range(n):
-            self.x = 0
-            while (
-                self.x < len(self.text[self.y]) and self.text[self.y][self.x].isspace()
-            ):
-                self.x += 1
-            self.ideal_x = self.x
+        self.x = 0
+        while (
+            self.x < len(self.text[self.y]) and self.text[self.y][self.x].isspace()
+        ):
+            self.x += 1
+        self.ideal_x = self.x
 
     def cursor_head(self, n: int = 1):
         self.x = self.y = self.ideal_x = 0
@@ -384,7 +379,7 @@ class Editor:
             self.ideal_x = self.x = len(self.text[self.y])
 
     def cursor_next_word(self, n: int = 1):
-        for i in range(n):
+        for _ in range(n):
             if self.x == len(self.text[self.y]):
                 if self.y < len(self.text) - 1:
                     self.y += 1
@@ -401,7 +396,7 @@ class Editor:
         self.ideal_x = self.x
 
     def cursor_prev_word(self, n: int = 1):
-        for i in range(n):
+        for _ in range(n):
             if self.x == 0:
                 if self.y > 0:
                     self.y -= 1
@@ -418,8 +413,8 @@ class Editor:
         self.ideal_x = self.x
 
     def cursor_next_char(self, n: int = 1):
-        for i in range(n):
-            if self.x == len(self.text[self.y]):
+        for _ in range(n):
+            if self.x >= len(self.text[self.y]):
                 if self.y < len(self.text) - 1:
                     self.y += 1
                     self.x = 0
@@ -430,7 +425,7 @@ class Editor:
         self.ideal_x = self.x
 
     def cursor_prev_char(self, n: int = 1):
-        for i in range(n):
+        for _ in range(n):
             if self.x == 0:
                 if self.y > 0:
                     self.y -= 1
@@ -443,8 +438,8 @@ class Editor:
 
     def at_cursor(self):
         if self.x < len(self.text[self.y]):
-            return self.text[self.y]
-        elif self.y < len(self.text):
+            return self.text[self.y][self.x]
+        elif self.y < len(self.text) - 1:
             return '\n'
         else:
             return None
@@ -454,9 +449,11 @@ class Editor:
 
     def cursor_fnxt_char(self, n: int = 1):
         ch = getch()
+        if not ch.isprintable() and ch not in ('\r', '\n', ' ', '\t'):
+            return
         if ch == '\r':
             ch = '\n'
-        for i in range(n):
+        for _ in range(n):
             self.cursor_next_char()
             while self.at_cursor() not in (ch, None):
                 self.cursor_next_char()
@@ -465,7 +462,7 @@ class Editor:
         ch = getch()
         if ch == '\r':
             ch = '\n'
-        for i in range(n):
+        for _ in range(n):
             self.cursor_prev_char()
             while self.at_cursor() != ch and not (self.y == self.x == 0):
                 self.cursor_prev_char()
@@ -540,8 +537,6 @@ class Editor:
             )
         else:
             self.drawer.draw(self.renderer, self.y, self.x)
-        self.screen.refresh()
-        flush()
 
         # modeline
         # gotoxy(self.h - self.minibuf_h, 1)
@@ -576,6 +571,9 @@ class Editor:
             )
             sh += 1
 
+        self.screen.refresh()
+        flush()
+
         # 或许可以和text一块绘制
         """# linum
         movecnt = 0
@@ -606,20 +604,29 @@ class Editor:
                 )
             movecnt += 1"""
 
+    def update_size(self):
+        self.w, self.h = get_terminal_size()
+        self.text_w = self.w - 1
+        self.text_h = self.h - 2
+        self.drawer.update_size()
+
     def mainloop(self):
         while not self.need_quit:
             # 只有绘制两遍能保证完全正确、、、
+            # 2025-1-30 原来竟是一个flush放错了位置（
+            self.update_size()
             self.draw()
-            self.draw()
+            # self.draw()
             key = getch()
-            if key != '0' and key.isdigit():
-                n = 0
-                while key.isdigit():
-                    n *= 10
-                    n += ord(key) - ord('0')
-                    key = getch()
-            else:
-                n = -1
+            if self.mode != 'INSERT':
+                if key != '0' and key.isdigit():
+                    n = 0
+                    while key.isdigit():
+                        n *= 10
+                        n += ord(key) - ord('0')
+                        key = getch()
+                else:
+                    n = -1
             if key in self.keymaps[self.mode]:
                 x = self.keymaps[self.mode][key]
                 while isinstance(x, dict):
