@@ -9,13 +9,6 @@ from utils import clear, flush, get_width, get_file_ext, log, gotoxy
 import sys
 from pyperclip import copy, paste
 
-# Windows控制台主机适配
-if sys.platform == "win32":
-    import ctypes
-
-    kernel32 = ctypes.windll.kernel32
-    kernel32.SetConsoleMode(kernel32.GetStdHandle(-11), 7)
-
 
 def getch():
     key = getwch()
@@ -25,7 +18,8 @@ def getch():
 
 
 class Editor:
-    def __init__(self, h: int, w: int):
+    def __init__(self):
+        w, h = get_terminal_size()
         self.screen = Screen(h, w)
 
         self.textinputer = TextInputer(self)
@@ -39,12 +33,14 @@ class Editor:
 
         self.h, self.w = h, w
         self.text_h = h - 2
-        self.text_w = w - 1
+        self.text_w = w - 2
         self.drawer = Drawer(
             self.screen,
             self.text,
             0,
             0,
+            self.text_h,
+            self.text_w,
             self.theme,
             True,
         )
@@ -208,6 +204,8 @@ class Editor:
                     self.text,
                     0,
                     0,
+                    self.text_h,
+                    self.text_w,
                     self.theme,
                     True,
                 )
@@ -471,8 +469,10 @@ class Editor:
     # 注意顺序问题，先渲染文本区（需要计算滚动）
     def draw(self):
         # minibuf
+        old_drawer_w = self.drawer.w
         self.drawer.w = self.w - 1
         self.minibuf_h, ext = self.drawer.get_line_hw(self.minibuf)
+        self.drawer.w = old_drawer_w
         if ext >= self.w:
             self.minibuf_h += 1
         starth = self.h - 1 - self.minibuf_h
@@ -543,10 +543,31 @@ class Editor:
         # gotoxy(self.h - self.minibuf_h, 1)
         # print(" " * self.w, end="")
         # gotoxy(self.h - self.minibuf_h, 1)
-        modeline = f" {self.mode}  save: {self.save}  ln: {self.y + 1} col: {self.x + 1} scroll: {self.drawer.scry + 1}+{self.drawer.scrys}"
+        modeline = f" {self.mode}  \t  ln: {self.y + 1} col: {self.x + 1} scroll: {self.drawer.scry + 1}+{self.drawer.scrys}"
+        save_space = self.w - (sum(map(get_width, modeline)) - get_width("\t"))
+        if save_space < 10:
+            save_space = self.w
+            modeline = "\t"
+        save_str = ""
+        cur_w = 0
+        if self.save:
+            for ch in self.save:
+                ch_w = get_width(ch)
+                if cur_w + ch_w + 2 > save_space:
+                    save_str += ".."
+                    cur_w += 2
+                    break
+                save_str += ch
+                cur_w += ch_w
+        else:
+            save_str = "[untitled]"
+            cur_w = 10
+        save_str += " " * (save_space - cur_w)
+        modeline = modeline.replace("\t", save_str)
         # gotoxy(self.h - 2, 1)
         # print(self.minibuf_h)
         sh = 0
+        # log((self.w, self.h, self.drawer.w, self.screen.w, modeline))
         for ch in modeline:
             self.screen.change(
                 self.h - self.minibuf_h - 1,
@@ -607,72 +628,94 @@ class Editor:
 
     def update_size(self):
         if (self.w, self.h) != (new_size := get_terminal_size()):
-            self.w, self.h = get_terminal_size()
-            self.text_w = self.w - 1
+            self.w, self.h = new_size
+            self.text_w = self.w - 2
             self.text_h = self.h - 2
-            self.drawer.update_size()
+            self.drawer.update_size(self.text_h, self.text_w)
             self.screen.update_size(self.h, self.w)
             return True
 
     def mainloop(self):
+        self.update_size()
+        # log((self.w, self.h, self.drawer.w, self.screen.w))
+        self.draw()
+        # log((self.w, self.h, self.drawer.w, self.screen.w))
+        # self.draw()
+        # log((self.w, self.h, self.drawer.w, self.screen.w))
         while not self.need_quit:
             # 只有绘制两遍能保证完全正确、、、
             # 2025-1-30 原来竟是一个flush放错了位置（
             # self.draw()
             if self.update_size():
+                # log("resize")
                 self.draw()
-            if kbhit():
-                key = getch()
-                if self.mode != 'INSERT':
-                    if key != '0' and key.isdigit():
-                        n = 0
-                        while key.isdigit():
-                            n *= 10
-                            n += ord(key) - ord('0')
-                            key = getch()
-                    else:
-                        n = -1
-                if key in self.keymaps[self.mode]:
-                    x = self.keymaps[self.mode][key]
-                    while isinstance(x, dict):
+            key = getch()
+            if self.mode != 'INSERT' and self.mode != 'COMMAND':
+                if key != '0' and key.isdigit():
+                    n = 0
+                    while key.isdigit():
+                        n *= 10
+                        n += ord(key) - ord('0')
                         key = getch()
-                        if key in x:
-                            x = x[key]
-                        else:
-                            break
-                    if callable(x):
-                        if n != -1:
-                            x(n)
-                        else:
-                            x()
-                elif self.mode == "INSERT" and key.isprintable():
-                    self.y, self.x = self.textinputer.insert(self.y, self.x, key)
-                    self.ideal_x = self.x
-                elif self.mode == "INSERT" and (key == "\r" or key == "\n"):
-                    self.y, self.x = self.textinputer.insert(self.y, self.x, "\n")
-                    self.ideal_x = self.x
-                elif self.mode == "COMMAND" and key.isprintable():
-                    self.minibuf = (
-                        self.minibuf[: self.cmd_x + 1]
-                        + key
-                        + self.minibuf[self.cmd_x + 1 :]
-                    )
-                    self.cmd_x += 1
+                else:
+                    n = -1
+            # log(repr(key))
+            if key in self.keymaps[self.mode]:
+                x = self.keymaps[self.mode][key]
+                while isinstance(x, dict):
+                    key = getch()
+                    if key in x:
+                        x = x[key]
+                    else:
+                        break
+                if callable(x):
+                    if n != -1:
+                        x(n)
+                    else:
+                        x()
+            elif self.mode == "INSERT" and key.isprintable():
+                self.y, self.x = self.textinputer.insert(self.y, self.x, key)
+                self.ideal_x = self.x
+            elif self.mode == "INSERT" and (key == "\r" or key == "\n"):
+                self.y, self.x = self.textinputer.insert(self.y, self.x, "\n")
+                self.ideal_x = self.x
+            elif self.mode == "COMMAND" and key.isprintable():
+                self.minibuf = (
+                    self.minibuf[: self.cmd_x + 1]
+                    + key
+                    + self.minibuf[self.cmd_x + 1 :]
+                )
+                self.cmd_x += 1
 
-                self.draw()
+            self.draw()
 
-        editor.screen.fill(' ', "\033[0m")
-        editor.screen.refresh()
+        self.screen.fill(' ', "\033[0m")
+        self.screen.refresh()
 
 
-print("\033[?25l")
-for i in range(get_terminal_size().lines - 3):
-    print()
-editor = Editor(get_terminal_size().lines, get_terminal_size().columns - 1)
-if len(sys.argv) == 2:
-    editor.open_file(sys.argv[1])
-log("editor main")
-editor.mainloop()
-# print(editor.text)
-print("\033[?25h")
-gotoxy(1, 1)
+def main():
+    import config.init as config
+
+    # Windows控制台主机适配
+    if sys.platform == "win32":
+        import ctypes
+
+        kernel32 = ctypes.windll.kernel32
+        kernel32.SetConsoleMode(kernel32.GetStdHandle(-11), 7)
+
+    print("\033[?25l")
+    for i in range(get_terminal_size().lines - 3):
+        print()
+    editor = Editor()
+    config.init(editor)
+    if len(sys.argv) == 2:
+        editor.open_file(sys.argv[1])
+    # log("editor main")
+    editor.mainloop()
+    # print(editor.text)
+    print("\033[?25h")
+    gotoxy(1, 1)
+
+
+if __name__ == "__main__":
+    main()

@@ -41,7 +41,7 @@ def get_width(o):
         widthlist[o] = 0
         return 0
     if o == 0x9:
-        widthlist[o] = 0
+        widthlist[o] = 8
         return 8
     for num, wid in widths:
         if o <= num:
@@ -57,7 +57,7 @@ def get_file_ext(f: str):
 
 def log(s):
     with open("termed.log", "a", encoding="utf8") as f:
-        f.write(s + " " + time.strftime("%Y-%m-%d %H:%M:%S") + "\n")
+        f.write(str(s) + " " + time.strftime("%Y-%m-%d %H:%M:%S") + "\n")
 
 
 def colorcvt(fg: int | tuple[int, int, int]):

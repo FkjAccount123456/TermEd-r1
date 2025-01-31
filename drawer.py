@@ -18,6 +18,8 @@ class Drawer:
         text: list[str],
         shh: int,
         shw: int,
+        h: int,
+        w: int,
         theme: Theme,
         linum: bool,
     ):
@@ -28,12 +30,14 @@ class Drawer:
         self.scry, self.scrys = 0, 0
         self.scrline = 0
         self.linum = linum
-        self.update_size()
+        self.update_size(h, w)
 
-    def update_size(self):
-        w, h = self.screen.w, self.screen.h
+    def update_size(self, h: int, w: int):
         self.full_w = w
         self.h, self.w = h, w
+        if self.linum:
+            self.linum_w = max(len(str(len(self.text))), 2) + 1
+            self.w = self.full_w - self.linum_w
 
     def get_line_h(self, line):
         w = 0
@@ -118,9 +122,6 @@ class Drawer:
         return res
 
     def draw(self, render: Renderer, y, x, selb=None, sele=None):
-        if self.linum:
-            self.linum_w = max(len(str(len(self.text))), 2) + 1
-            self.w = self.full_w - self.linum_w
         y, ys = y, self.get_line_h(self.text[y][:x]) - 1
         if (y, ys) < (self.scry, self.scrys):
             self.scry, self.scrys = y, ys
