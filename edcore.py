@@ -8,6 +8,7 @@ from renderers.renderers import get_renderer
 from utils import clear, flush, get_width, get_file_ext, log, gotoxy
 import sys
 from pyperclip import copy, paste
+from threading import Thread
 
 
 def getch():
@@ -18,8 +19,7 @@ def getch():
 
 
 class Editor:
-    def __init__(self):
-        w, h = get_terminal_size()
+    def __init__(self, h: int, w: int):
         self.screen = Screen(h, w)
 
         self.textinputer = TextInputer(self)
@@ -57,10 +57,10 @@ class Editor:
 
         self.keymaps = {
             "NORMAL": {
-                "i": lambda *n: setattr(self, "mode", "INSERT"),
+                "i": lambda *_: setattr(self, "mode", "INSERT"),
                 # Use :q instead of C-c to quit TermEd
                 # "\x03": lambda: setattr(self, "need_quit", True),
-                "P": lambda *n: self.textinputer.insert(self.y, self.x, paste()),
+                "P": lambda *_: self.textinputer.insert(self.y, self.x, paste()),
                 "p": self.paste_after_cursor,
                 "v": self.mode_select,
                 "h": self.cursor_left,
@@ -160,6 +160,8 @@ class Editor:
         self.save = None
 
         self.need_quit = False
+
+        self.input_queue = []
 
     def undo(self, n: int = 1):
         for _ in range(n):
@@ -633,7 +635,20 @@ class Editor:
             self.text_h = self.h - 2
             self.drawer.update_size(self.text_h, self.text_w)
             self.screen.update_size(self.h, self.w)
-            return True
+            # log("resize")
+            self.draw()
+
+    def getch(self):
+        # 只应该有一个值
+        self.input_queue.append(getch())
+
+    # kbhit在我这里有问题，所以要试试异步执行
+    def async_getch(self) -> str:
+        getch_thread = Thread(target=self.getch, args=(), daemon=True)
+        getch_thread.start()
+        while not self.input_queue:
+            self.update_size()
+        return self.input_queue.pop()
 
     def mainloop(self):
         self.update_size()
@@ -646,10 +661,8 @@ class Editor:
             # 只有绘制两遍能保证完全正确、、、
             # 2025-1-30 原来竟是一个flush放错了位置（
             # self.draw()
-            if self.update_size():
-                # log("resize")
-                self.draw()
-            key = getch()
+            # self.update_size()
+            key = self.async_getch()
             if self.mode != 'INSERT' and self.mode != 'COMMAND':
                 if key != '0' and key.isdigit():
                     n = 0
@@ -663,7 +676,7 @@ class Editor:
             if key in self.keymaps[self.mode]:
                 x = self.keymaps[self.mode][key]
                 while isinstance(x, dict):
-                    key = getch()
+                    key = self.async_getch()
                     if key in x:
                         x = x[key]
                     else:
@@ -704,9 +717,9 @@ def main():
         kernel32.SetConsoleMode(kernel32.GetStdHandle(-11), 7)
 
     print("\033[?25l")
-    for i in range(get_terminal_size().lines - 3):
+    for _ in range(get_terminal_size().lines - 3):
         print()
-    editor = Editor()
+    editor = Editor(get_terminal_size().lines, get_terminal_size().columns)
     config.init(editor)
     if len(sys.argv) == 2:
         editor.open_file(sys.argv[1])
