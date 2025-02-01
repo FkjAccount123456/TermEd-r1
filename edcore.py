@@ -212,6 +212,7 @@ class Editor:
                     True,
                 )
                 self.y = self.ideal_x = self.x = 0
+                self.textinputer.save()
             except FileNotFoundError:
                 pass
             self.renderer = get_renderer(get_file_ext(self.save))(self.text)
@@ -233,6 +234,7 @@ class Editor:
                     try:
                         with open(self.save, "w", encoding="utf-8") as f:
                             f.write("\n".join(self.text))
+                        self.textinputer.save()
                     except:
                         pass
         elif head == "o":
@@ -545,13 +547,16 @@ class Editor:
         # gotoxy(self.h - self.minibuf_h, 1)
         # print(" " * self.w, end="")
         # gotoxy(self.h - self.minibuf_h, 1)
-        modeline = f" {self.mode}  \t  ln: {self.y + 1} col: {self.x + 1} scroll: {self.drawer.scry + 1}+{self.drawer.scrys}"
+        modeline = f""" {self.mode}  \t\
+  ln: {self.y + 1} col: {self.x + 1} scroll: {self.drawer.scry + 1}+{self.drawer.scrys}"""
         save_space = self.w - (sum(map(get_width, modeline)) - get_width("\t"))
         if save_space < 10:
             save_space = self.w
             modeline = "\t"
         save_str = ""
         cur_w = 0
+        if not self.textinputer.is_saved():
+            save_space -= 3
         if self.save:
             for ch in self.save:
                 ch_w = get_width(ch)
@@ -564,6 +569,8 @@ class Editor:
         else:
             save_str = "[untitled]"
             cur_w = 10
+        if not self.textinputer.is_saved():
+            save_str += "[+]"
         save_str += " " * (save_space - cur_w)
         modeline = modeline.replace("\t", save_str)
         # gotoxy(self.h - 2, 1)
