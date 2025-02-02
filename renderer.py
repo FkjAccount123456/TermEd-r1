@@ -81,11 +81,14 @@ onedark_theme = {
     "num": (0x282C34, 0xD19A66),
     "kw": (0x282C34, 0xC678DD),
     "str": (0x282C34, 0x98C379),
-    "const": (0x282C34, 0xC678DD),
+    "const": (0x282C34, 0xD19A66),
     "comment": (0x282C34, 0x5C6370),
     "op": (0x282C34, 0xABB2BF),
     "func": (0x282C34, 0x61AFEF),
     "class": (0x282C34, 0xE5C07B),
+    "module": (0x282C34, 0xE5C07B),
+    "field": (0x282C34, 0xE06C75),
+    "param": (0x282C34, 0xD19A66),
 }
 
 default_theme = onedark_theme

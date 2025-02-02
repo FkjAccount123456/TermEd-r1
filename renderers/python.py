@@ -1,5 +1,4 @@
 from renderer import Renderer
-from enum import Enum, unique
 import keyword
 
 """
@@ -7,20 +6,21 @@ import keyword
 """
 
 
-@unique
-class PyLnSt(Enum):
+class PyLnSt:
     Unknown = -1
     Null = 0
     StrPass = 1
     Str2Pass = 2
     StrLong = 3
     Str2Long = 4
-    AfterDef = 5
-    AfterClass = 6
+    # 经典bitmask
+    AfterDef = 0b1000
+    AfterClass = 0b10000
+    AfterFrom = 0b100000
+    AfterDot = 0b1000000
 
 
-@unique
-class PyTok(Enum):
+class PyTok:
     Unknown = -1
     Id = 0
     Num = 1
@@ -32,6 +32,9 @@ class PyTok(Enum):
     Other = 7
     Class = 8
     Func = 9
+    Module = 10
+    Field = 11
+    Param = 12
 
 
 pyTokDict = [
@@ -45,9 +48,12 @@ pyTokDict = [
     "text",
     "class",
     "func",
+    "module",
+    "field",
+    "param",
 ]
 
-pyKwSet = set(keyword.kwlist) | set(keyword.softkwlist) | {"self", "cls"}
+pyKwSet = set(keyword.kwlist) | set(keyword.softkwlist)
 
 pyOpSet = set("~!%^&*()-+=[{}]|;:,.<>")
 
@@ -205,7 +211,7 @@ class PythonRenderer(Renderer):
     def __init__(self, text: list[str]):
         super().__init__(text)
         self.sts = [PyLnSt.Unknown for _ in range(len(self.text))]  # States
-        self.buf: list[list[PyTok]] = [[] for _ in range(len(self.text))]
+        self.buf: list[list[int]] = [[] for _ in range(len(self.text))]
 
     def change(self, ln: int):
         super().change(ln)
@@ -227,18 +233,23 @@ class PythonRenderer(Renderer):
         del self.sts[begin : end + 1]
         del self.buf[begin : end + 1]
 
+    def _check_lparen(self, ln: int, x: int) -> bool:
+        while x < len(self.text[ln]) and self.text[ln][x].isspace():
+            x += 1
+        return x < len(self.text[ln]) and self.text[ln][x] == "("
+
     def render_line(self, ln: int):
         if ln > 0:
             st = self.sts[ln - 1]
         else:
-            st = PyLnSt.Null
+            st = 0
         assert st != PyLnSt.Unknown
         self.buf[ln] = []
         s = self.text[ln]
         res = self.buf[ln]
         x = 0
 
-        if PyLnSt.StrPass.value <= st.value <= PyLnSt.Str2Long.value:
+        if PyLnSt.StrPass <= st <= PyLnSt.Str2Long:
             q = '"' if st in (PyLnSt.Str2Long, PyLnSt.Str2Pass) else "'"
             qcnt = 3 if st in (PyLnSt.StrLong, PyLnSt.Str2Long) else 1
             while x < len(s) and not (s[x: x+qcnt] == q * qcnt):
@@ -263,7 +274,7 @@ class PythonRenderer(Renderer):
                 for _ in range(qcnt):
                     x += 1
                     res.append(PyTok.Str)
-            st = PyLnSt.Null
+            st = 0
 
         # 词进式，每次一个单词
         while x < len(s):
@@ -272,27 +283,56 @@ class PythonRenderer(Renderer):
                 while x < len(s) and (s[x].isalnum() or s[x] == "_"):
                     q += s[x]
                     x += 1
-                if st == PyLnSt.AfterDef:
-                    idtp = PyTok.Func
-                    st = PyLnSt.Null
-                elif st == PyLnSt.AfterClass:
-                    idtp = PyTok.Class
-                    st = PyLnSt.Null
+                if q in {"self", "cls"}:
+                    idtp = PyTok.Param
+                elif q in {"True", "False", "None"}:
+                    idtp = PyTok.Const
                 elif q in pyKwSet:
                     idtp = PyTok.Keyword
                     if q == "def":
-                        st = PyLnSt.AfterDef
+                        st |= PyLnSt.AfterDef
                     elif q == "class":
-                        st = PyLnSt.AfterClass
+                        st |= PyLnSt.AfterClass
+                    elif q == "from":
+                        st |= PyLnSt.AfterFrom
+                    elif q == "import":
+                        if st & PyLnSt.AfterFrom:
+                            st &= ~PyLnSt.AfterFrom
+                        else:
+                            st |= PyLnSt.AfterFrom
                 elif q.isdecimal():
                     idtp = PyTok.Num
+                elif st:
+                    if st & PyLnSt.AfterDef:
+                        idtp = PyTok.Func
+                        st = 0
+                    elif st & PyLnSt.AfterClass:
+                        idtp = PyTok.Class
+                        st = 0
+                    elif st & PyLnSt.AfterDot:
+                        idtp = PyTok.Field
+                        st &= ~PyLnSt.AfterDot
+                    elif st & PyLnSt.AfterFrom:
+                        idtp = PyTok.Module
+                    else:
+                        assert False
+                    if self._check_lparen(ln, x):
+                        if ord('A') <= ord(q[0]) <= ord('Z'):
+                            idtp = PyTok.Class
+                        else:
+                            idtp = PyTok.Func
                 elif q in pyClassSet:
                     idtp = PyTok.Class
                 elif q in pyFuncSet:
                     idtp = PyTok.Func
                 else:
                     idtp = PyTok.Id
-                for i in range(len(q)):
+                    if self._check_lparen(ln, x):
+                        if ord('A') <= ord(q[0]) <= ord('Z'):
+                            idtp = PyTok.Class
+                        else:
+                            idtp = PyTok.Func
+                for _ in q:
                     res.append(idtp)
             elif s[x] in "\"'":
                 q = s[x]
@@ -325,20 +365,25 @@ class PythonRenderer(Renderer):
                     for _ in range(qcnt):
                         x += 1
                         res.append(PyTok.Str)
-                st = PyLnSt.Null
+                if not (st & PyLnSt.AfterFrom):
+                    st = 0
             elif s[x] in pyOpSet:
+                if s[x] == ".":
+                    st |= PyLnSt.AfterDot
+                else:
+                    if not (st & PyLnSt.AfterFrom):
+                        st = 0
                 x += 1
                 res.append(PyTok.Op)
-                st = PyLnSt.Null
             elif s[x] == "#":
                 while x < len(s):
                     x += 1
                     res.append(PyTok.Comment)
-                st = PyLnSt.Null
+                return 0
             else:
                 x += 1
                 res.append(PyTok.Other)
-        return st
+        return 0
 
     def render(self, target: int):
         assert target < len(self.text)
@@ -359,4 +404,4 @@ class PythonRenderer(Renderer):
     def get(self, y: int, x: int) -> str:
         assert y < len(self.text)
         self.render(y)
-        return pyTokDict[self.buf[y][x].value]
+        return pyTokDict[self.buf[y][x]]

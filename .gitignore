@@ -6,3 +6,4 @@ renderers/__pycache__/
 chat.txt
 *.log
 *.ps1
+tests/
