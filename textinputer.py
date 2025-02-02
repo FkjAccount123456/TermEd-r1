@@ -4,7 +4,6 @@
 """
 
 from enum import Enum, unique
-from typing import NamedTuple
 import time
 
 from utils import log
@@ -164,7 +163,7 @@ class TextInputer:
             self.cur_history = self.cur_history.add(
                 History(HistoryType.Delete, (y, x), (q, p), self.get(y, x, q, p)))
         self.parent.renderer.change(y)
-        if p == len(self.text[q]):
+        if p == len(self.text[q]) and q < len(self.text) - 1:
             self.parent.renderer.rem(y + 1, q + 1)
         else:
             self.parent.renderer.rem(y + 1, q)
