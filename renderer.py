@@ -55,20 +55,21 @@ class Theme:
         return self.format(self.d["bg"], self.d[token])
 
 
-gruvbox_theme = {
-    "bg": (0x282828, 0x000000),
-    "text": (0x282828, 0xEBDBB2),
-    "id": (0x282828, 0xEBDBB2),
-    "sel": (0x3C3836, 0x000000),
-    "cursor": (0xEBDBB2, 0xEBDBB2),
-    "linum": (0x282828, 0x928374),
-    "num": (0x282828, 0xD3869B),
-    "kw": (0x282828, 0xFB4934),
-    "str": (0x282828, 0xB8BB26),
-    "const": (0x282828, 0xFABD2F),
-    "comment": (0x282828, 0x928374),
-    "op": (0x282828, 0xEBDBB2),
-}
+# 懒得写了
+# gruvbox_theme = {
+#     "bg": (0x282828, 0x000000),
+#     "text": (0x282828, 0xEBDBB2),
+#     "id": (0x282828, 0xEBDBB2),
+#     "sel": (0x3C3836, 0x000000),
+#     "cursor": (0xEBDBB2, 0xEBDBB2),
+#     "linum": (0x282828, 0x928374),
+#     "num": (0x282828, 0xD3869B),
+#     "kw": (0x282828, 0xFB4934),
+#     "str": (0x282828, 0xB8BB26),
+#     "const": (0x282828, 0xFABD2F),
+#     "comment": (0x282828, 0x928374),
+#     "op": (0x282828, 0xEBDBB2),
+# }
 
 onedark_theme = {
     "bg": (0x282C34, 0x000000),
@@ -83,6 +84,8 @@ onedark_theme = {
     "const": (0x282C34, 0xC678DD),
     "comment": (0x282C34, 0x5C6370),
     "op": (0x282C34, 0xABB2BF),
+    "func": (0x282C34, 0x61AFEF),
+    "class": (0x282C34, 0xE5C07B),
 }
 
 default_theme = onedark_theme

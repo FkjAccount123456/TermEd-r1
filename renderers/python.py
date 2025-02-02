@@ -1,6 +1,6 @@
 from renderer import Renderer
 from enum import Enum, unique
-from keyword import kwlist
+import keyword
 
 """
 带2的是"
@@ -15,6 +15,8 @@ class PyLnSt(Enum):
     Str2Pass = 2
     StrLong = 3
     Str2Long = 4
+    AfterDef = 5
+    AfterClass = 6
 
 
 @unique
@@ -28,6 +30,8 @@ class PyTok(Enum):
     Comment = 5
     Op = 6
     Other = 7
+    Class = 8
+    Func = 9
 
 
 pyTokDict = [
@@ -39,9 +43,157 @@ pyTokDict = [
     "comment",
     "op",
     "text",
+    "class",
+    "func",
 ]
 
+pyKwSet = set(keyword.kwlist) | set(keyword.softkwlist) | {"self", "cls"}
+
 pyOpSet = set("~!%^&*()-+=[{}]|;:,.<>")
+
+pyFuncSet = {
+    "abs",
+    "all",
+    "any",
+    "ascii",
+    "bin",
+    "breakpoint",
+    "callable",
+    "chr",
+    "compile",
+    "copyright",
+    "credits",
+    "delattr",
+    "dir",
+    "divmod",
+    "eval",
+    "exec",
+    "exit",
+    "format",
+    "getattr",
+    "globals",
+    "hasattr",
+    "hash",
+    "help",
+    "hex",
+    "id",
+    "input",
+    "isinstance",
+    "issubclass",
+    "iter",
+    "len",
+    "license",
+    "locals",
+    "max",
+    "min",
+    "next",
+    "oct",
+    "open",
+    "ord",
+    "pow",
+    "print",
+    "quit",
+    "repr",
+    "round",
+    "setattr",
+    "sum",
+    "vars",
+}
+
+
+pyClassSet = {
+    "str",
+    "int",
+    "float",
+    "complex",
+    "bool",
+    "list",
+    "tuple",
+    "dict",
+    "set",
+    "frozenset",
+    "bytes",
+    "bytearray",
+    "memoryview",
+    "object",
+    "type",
+    "enumerate",
+    "range",
+    "zip",
+    "map",
+    "filter",
+    "reversed",
+    "slice",
+    "staticmethod",
+    "classmethod",
+    "property",
+    "super",
+
+    "Exception",
+    "BaseException",
+    "SystemExit",
+    "KeyboardInterrupt",
+    "GeneratorExit",
+    "StopIteration",
+    "StopAsyncIteration",
+    "ArithmeticError",
+    "FloatingPointError",
+    "OverflowError",
+    "ZeroDivisionError",
+    "AssertionError",
+    "AttributeError",
+    "BufferError",
+    "EOFError",
+    "ImportError",
+    "ModuleNotFoundError",
+    "LookupError",
+    "IndexError",
+    "KeyError",
+    "MemoryError",
+    "NameError",
+    "UnboundLocalError",
+    "OSError",
+    "BlockingIOError",
+    "ChildProcessError",
+    "ConnectionError",
+    "BrokenPipeError",
+    "ConnectionAbortedError",
+    "ConnectionRefusedError",
+    "ConnectionResetError",
+    "FileExistsError",
+    "FileNotFoundError",
+    "InterruptedError",
+    "IsADirectoryError",
+    "NotADirectoryError",
+    "PermissionError",
+    "ProcessLookupError",
+    "TimeoutError",
+    "ReferenceError",
+    "RuntimeError",
+    "NotImplementedError",
+    "RecursionError",
+    "SyntaxError",
+    "IndentationError",
+    "TabError",
+    "SystemError",
+    "TypeError",
+    "ValueError",
+    "UnicodeError",
+    "UnicodeDecodeError",
+    "UnicodeEncodeError",
+    "UnicodeTranslateError",
+    "Warning",
+    "UserWarning",
+    "DeprecationWarning",
+    "PendingDeprecationWarning",
+    "SyntaxWarning",
+    "RuntimeWarning",
+    "FutureWarning",
+    "ImportWarning",
+    "UnicodeWarning",
+    "BytesWarning",
+    "ResourceWarning",
+}
 
 
 class PythonRenderer(Renderer):
@@ -86,7 +238,7 @@ class PythonRenderer(Renderer):
         res = self.buf[ln]
         x = 0
 
-        if st != PyLnSt.Null:
+        if PyLnSt.StrPass.value <= st.value <= PyLnSt.Str2Long.value:
             q = '"' if st in (PyLnSt.Str2Long, PyLnSt.Str2Pass) else "'"
             qcnt = 3 if st in (PyLnSt.StrLong, PyLnSt.Str2Long) else 1
             while x < len(s) and not (s[x: x+qcnt] == q * qcnt):
@@ -111,7 +263,7 @@ class PythonRenderer(Renderer):
                 for _ in range(qcnt):
                     x += 1
                     res.append(PyTok.Str)
-        st = PyLnSt.Null
+            st = PyLnSt.Null
 
         # 词进式，每次一个单词
         while x < len(s):
@@ -120,10 +272,24 @@ class PythonRenderer(Renderer):
                 while x < len(s) and (s[x].isalnum() or s[x] == "_"):
                     q += s[x]
                     x += 1
-                if q in kwlist:
+                if st == PyLnSt.AfterDef:
+                    idtp = PyTok.Func
+                    st = PyLnSt.Null
+                elif st == PyLnSt.AfterClass:
+                    idtp = PyTok.Class
+                    st = PyLnSt.Null
+                elif q in pyKwSet:
                     idtp = PyTok.Keyword
+                    if q == "def":
+                        st = PyLnSt.AfterDef
+                    elif q == "class":
+                        st = PyLnSt.AfterClass
                 elif q.isdecimal():
                     idtp = PyTok.Num
+                elif q in pyClassSet:
+                    idtp = PyTok.Class
+                elif q in pyFuncSet:
+                    idtp = PyTok.Func
                 else:
                     idtp = PyTok.Id
                 for i in range(len(q)):
@@ -159,20 +325,20 @@ class PythonRenderer(Renderer):
                     for _ in range(qcnt):
                         x += 1
                         res.append(PyTok.Str)
+                st = PyLnSt.Null
             elif s[x] in pyOpSet:
                 x += 1
                 res.append(PyTok.Op)
-            elif s[x].isspace():
-                x += 1
-                res.append(PyTok.Other)
+                st = PyLnSt.Null
             elif s[x] == "#":
                 while x < len(s):
                     x += 1
                     res.append(PyTok.Comment)
+                st = PyLnSt.Null
             else:
                 x += 1
                 res.append(PyTok.Other)
-        return PyLnSt.Null
+        return st
 
     def render(self, target: int):
         assert target < len(self.text)
