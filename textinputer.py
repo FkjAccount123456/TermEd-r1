@@ -164,7 +164,10 @@ class TextInputer:
             self.cur_history = self.cur_history.add(
                 History(HistoryType.Delete, (y, x), (q, p), self.get(y, x, q, p)))
         self.parent.renderer.change(y)
-        self.parent.renderer.rem(y + 1, q)
+        if p == len(self.text[q]):
+            self.parent.renderer.rem(y + 1, q + 1)
+        else:
+            self.parent.renderer.rem(y + 1, q)
         if y == q:
             if p == len(self.text[y]):
                 self.text[y] = self.text[y][:x]

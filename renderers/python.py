@@ -48,6 +48,8 @@ class PythonRenderer(Renderer):
     # 看来我还是喜欢抽象命名（
     # 三字符想必是最好的，意义明确还好打
     # 就像use let pub之类（
+    # 2025-2-2 得，现在不这么觉得了
+    #          原来最大的痛苦就是阅读自己几个月前的代码
     def __init__(self, text: list[str]):
         super().__init__(text)
         self.sts = [PyLnSt.Unknown for _ in range(len(self.text))]  # States
