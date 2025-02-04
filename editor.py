@@ -1,21 +1,4 @@
-from os import get_terminal_size
-from drawer import Drawer
-from screen import Screen
 from textinputer import TextInputer
-from msvcrt import getwch
-from renderer import *
-from renderers.renderers import get_renderer
-from utils import flush, get_width, get_file_ext, log, gotoxy
-import sys
-from pyperclip import copy, paste
-from threading import Thread
-
-
-def getch():
-    key = getwch()
-    if key == "\xe0":
-        return "\x00"
-    return key
 
 
 class Editor:
@@ -715,31 +698,3 @@ class Editor:
 
         self.screen.fill(' ', "\033[0m")
         self.screen.refresh()
-
-
-def main():
-    import config.init as config
-
-    # Windows控制台主机适配
-    if sys.platform == "win32":
-        import ctypes
-
-        kernel32 = ctypes.windll.kernel32
-        kernel32.SetConsoleMode(kernel32.GetStdHandle(-11), 7)
-
-    print("\033[?25l")
-    for _ in range(get_terminal_size().lines - 3):
-        print()
-    editor = Editor(get_terminal_size().lines, get_terminal_size().columns)
-    config.init(editor)
-    if len(sys.argv) == 2:
-        editor.open_file(sys.argv[1])
-    # log("editor main")
-    editor.mainloop()
-    # print(editor.text)
-    print("\033[?25h")
-    gotoxy(1, 1)
-
-
-if __name__ == "__main__":
-    main()

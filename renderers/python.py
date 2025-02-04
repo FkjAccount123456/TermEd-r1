@@ -309,11 +309,11 @@ class PythonRenderer(Renderer):
                     elif st & PyLnSt.AfterClass:
                         idtp = PyTok.Class
                         st = 0
+                    elif st & PyLnSt.AfterFrom:
+                        idtp = PyTok.Module
                     elif st & PyLnSt.AfterDot:
                         idtp = PyTok.Field
                         st &= ~PyLnSt.AfterDot
-                    elif st & PyLnSt.AfterFrom:
-                        idtp = PyTok.Module
                     else:
                         assert False
                     if self._check_lparen(ln, x):
