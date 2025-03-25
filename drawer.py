@@ -7,30 +7,26 @@ from utils import get_width
 from renderer import *
 
 
+# 2025-3-14
+# Legacy，完全的Legacy
+# 恐怕要永远受它拖累了
+# 记得当初刚写的时候还洋洋得意呢（
+# 可恶，那已经是六个月前了
+# 或者更疯狂一点，重新写一个？
 class Drawer:
     """
-    专用于渲染代码区，与行号和modeline无关
+    专用于渲染代码区，与modeline无关
     """
 
-    def __init__(
-        self,
-        screen: Screen,
-        text: list[str],
-        shh: int,
-        shw: int,
-        h: int,
-        w: int,
-        theme: Theme,
-        linum: bool,
-    ):
-        self.screen = screen
-        self.text = text
-        self.theme = theme
-        self.shh, self.shw = shh, shw
-        self.scry, self.scrys = 0, 0
-        self.scrline = 0
-        self.linum = linum
+    def __init__(self, screen: Screen, text: list[str],
+                 top: int, left: int, h: int, w: int,
+                 theme: Theme, linum: bool):
+        self.screen, self.text = screen, text
+        self.top, self.left = top, left
+        self.theme, self.linum = theme, linum
         self.update_size(h, w)
+
+        self.scry, self.scrys = 0, 0
 
     def update_size(self, h: int, w: int):
         self.full_w = w
@@ -39,74 +35,55 @@ class Drawer:
             self.linum_w = max(len(str(len(self.text))), 2) + 1
             self.w = self.full_w - self.linum_w
 
-    def get_line_h(self, line):
-        w = 0
-        h = 1
-        for ch in line:
-            ch_w = get_width(ch)
-            if w + ch_w > self.w:
-                h += 1
-                w = 0
-            w += ch_w
-        # gotoxy(self.h, 20)
-        # print(line, h, " " * 20)
-        return h
+    def move(self, top: int, left: int):
+        self.top, self.left = top, left
 
-    def get_line_hw(self, line):
+    def get_line_hw(self, line: str, rg: range | None = None) -> tuple[int, int]:
+        rg = rg if rg is not None else range(len(line))
         w = 0
         h = 1
-        for ch in line:
-            ch_w = get_width(ch)
+        for i in rg:
+            ch_w = get_width(line[i])
             if w + ch_w > self.w:
                 h += 1
                 w = 0
             w += ch_w
-        # gotoxy(self.h, 20)
-        # print(line, h, " " * 20)
         return h, w
 
-    # 这里使用generator是个好想法
-    # 这才叫优雅
-    def moveup(self, y, ys):
-        if y == 0 and ys == 0:
-            return
-        while not (y == 0 and ys == 0):
-            if ys != 0:
-                ys -= 1
-            elif y != 0:
-                y -= 1
-                ys = self.get_line_h(self.text[y]) - 1
-            else:
-                return
-            yield y, ys
-        return
-
-    def movedown(self, y, ys):
-        curlnh = self.get_line_h(self.text[y])
-        if y >= len(self.text) - 1 and ys >= curlnh - 1:
-            return
-        yield y, ys
-        while not (y >= len(self.text) - 1 and ys >= curlnh - 1):
-            if ys < curlnh - 1:
-                ys += 1
-            elif y < len(self.text) - 1:
-                y += 1
+    def scroll_up(self, y: int, ys: int, nmove: int):
+        assert nmove > 0
+        while nmove > 0:
+            if ys > nmove:
+                return y, ys - nmove
+            elif 0 < ys <= nmove:
+                nmove -= ys
                 ys = 0
-                curlnh = self.get_line_h(self.text[y])
             else:
-                return
-            # print(y, ys)
-            yield y, ys
-        return
-
-    def scroll(self, y, ys, movefn, tgt):
-        assert tgt > 0
-        movecnt = 0
-        # 你说得对，但是Python是函数作用域
-        for y, ys in movefn(y, ys):
-            movecnt += 1
-            if movecnt == tgt:
-                break
+                if y == 0:
+                    return -1, -nmove + 1
+                else:
+                    y -= 1
+                    ys = self.get_line_hw(self.text[y])[0] - 1
+                    nmove -= 1
+        return y, ys
+    
+    def scroll_down(self, y: int, ys: int, nmove: int):
+        assert nmove > 0
+        curline_h = self.get_line_hw(self.text[y])[0] - 1
+        while nmove > 0:
+            if curline_h - ys > nmove:
+                return y, ys + nmove
+            elif 0 < curline_h - ys <= nmove:
+                nmove -= curline_h - ys
+                ys = curline_h
+            else:
+                if y + 1 < len(self.text):
+                    y += 1
+                    ys = 0
+                    curline_h = self.get_line_hw(self.text[y])[0] - 1
+                    nmove -= 1
+                else:
+                    return y + 1, nmove - 1
         return y, ys
 
     def process_line(self, line: str):
@@ -115,66 +92,95 @@ class Drawer:
         for i, ch in enumerate(line):
             ch_w = get_width(ch)
             if w + ch_w > self.w:
-                res.append(i + 1)
+                res.append(i)
                 w = 0
             w += ch_w
         res.append(len(line))
         return res
 
-    def draw(self, render: Renderer, y, x, selb=None, sele=None):
-        y, ys = y, self.get_line_h(self.text[y][:x]) - 1
+    # 懒得写什么复杂但只快一点的了
+    # 反正一次绘制只需要一次绘制光标
+    def calc_diff(self, y: int, ys: int):
+        assert (y, ys) >= (self.scry, self.scrys)
+        i = 0
+        cy, cys = self.scry, self.scrys
+        curline_h = self.get_line_hw(self.text[cy])[0] - 1
+        while (cy, cys) < (y, ys):
+            if cys == curline_h:
+                if cy < len(self.text) - 1:
+                    cy += 1
+                    cys = 0
+                    curline_h = self.get_line_hw(self.text[cy])[0] - 1
+                else:
+                    raise RuntimeError("calc_diff: out of range", y, ys, self.text,
+                                       self.scry, self.scrys)
+            else:
+                cys += 1
+            i += 1
+        return i
+
+    def scroll_buffer(self, y: int, x: int):
+        ys, x = self.get_line_hw(self.text[y], range(x))
+        if x < self.w:
+            ys -= 1
         if (y, ys) < (self.scry, self.scrys):
             self.scry, self.scrys = y, ys
-        elif (nxt := self.scroll(y, ys, self.moveup, self.h - 1)) > (
-            self.scry,
-            self.scrys,
-        ):
+        elif (nxt := self.scroll_up(y, ys, self.h - 1)) > (self.scry, self.scrys):
             self.scry, self.scrys = nxt
+
+    # 2025-3-16
+    # 显然并不能做出太大的改变，不过能改一点是一点
+    def draw(self, render: Renderer,
+             selb: tuple[int, int] | None = None, sele: tuple[int, int] | None =None):
+        render.set_ukb()
+        render.render(self.scroll_down(self.scry, self.scrys, self.h - 1)[0])
         scrcnt = 0
         cy, cys = self.scry, self.scrys
-        # gotoxy(self.h, 0)
-        # print(cy, cys, y, ys, x)
         curln = self.process_line(self.text[cy])
         isend = False
+
         while scrcnt < self.h:
             cursh = 0
             i = None
+
             if not isend:
                 if self.linum:
                     if cys == 0:
                         linum = f"%{self.linum_w - 1}d " % (cy + 1)
                         for ch in linum:
-                            self.screen.change(self.shh + scrcnt, self.shw + cursh, ch, self.theme.get("linum", False, False))
+                            self.screen.change(self.top + scrcnt, self.left + cursh,
+                                               ch, self.theme.get("linum", False))
                             cursh += 1
                     else:
                         while cursh < self.linum_w:
-                            self.screen.change(self.shh + scrcnt, self.shw + cursh, " ", self.theme.get("linum", False, False))
+                            self.screen.change(self.top + scrcnt, self.left + cursh,
+                                               " ", self.theme.get("linum", False))
                             cursh += 1
+
                 i = -1
                 for i in range(curln[cys], curln[cys + 1]):
                     if selb is not None and sele is not None:
                         insel = selb <= (cy, i) <= sele
                     else:
                         insel = False
-                    color = self.theme.get(render.get(cy, i), insel, (y, x) == (cy, i))
-                    self.screen.change(self.shh + scrcnt, self.shw + cursh, self.text[cy][i], color)
-                    chw = get_width(self.text[cy][i])
+                    color = self.theme.get(render.get(cy, i), insel)
+                    self.screen.change(self.top + scrcnt, self.left + cursh,
+                                       (ch := self.text[cy][i]), color)
                     cursh += 1
-                    for _ in range(i + 1, i + chw):
-                        self.screen.change(scrcnt, self.shw + cursh, "", color)
+                    for _ in range(get_width(ch) - 1):
+                        self.screen.change(self.top + scrcnt, self.left + cursh,
+                                           "", color)
                         cursh += 1
+
             if i is not None:
                 i += 1
-            while cursh < self.screen.w:
-                self.screen.change(
-                    self.shh + scrcnt,
-                    self.shw + cursh,
-                    " ",
-                    self.theme.get("text", False, not isend and (y, x) == (cy, i)),
-                )
+            while cursh < self.full_w:
+                self.screen.change(self.top + scrcnt, self.left + cursh,
+                                   " ", self.theme.get("text", False))
                 cursh += 1
                 if not isend:
                     i = None
+            
             if not isend:
                 if cys == len(curln) - 2:
                     if cy == len(self.text) - 1:
@@ -185,4 +191,13 @@ class Drawer:
                         curln = self.process_line(self.text[cy])
                 else:
                     cys += 1
+
             scrcnt += 1
+
+    def draw_cursor(self, y: int, x: int):
+        ys, x = self.get_line_hw(self.text[y][:x])
+        ys -= 1
+        if x == self.w:
+            return self.calc_diff(y, ys) + 1, self.linum_w
+        return self.calc_diff(y, ys), x + self.linum_w
+

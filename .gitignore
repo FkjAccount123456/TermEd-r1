@@ -7,3 +7,5 @@ chat.txt
 *.log
 *.ps1
 tests/
+share/
+test.py

@@ -5,8 +5,8 @@
 
 from enum import Enum, unique
 import time
-
 from utils import log
+from renderer import Renderer
 
 
 EDIT_DELAY = 0.2
@@ -28,7 +28,7 @@ class History:
 
     def __str__(self):
         return f"History({self.tp}, {self.begin}, {self.end}, {repr(self.text)})"
-    
+
     __repr__ = __str__
 
 
@@ -61,14 +61,17 @@ class UndoTree:
         self.chs.append(UndoTree(self, len(self.chs)))
         self.chs[-1].cur = his
         return self.chs[-1]
-    
+
     def __str__(self):
         return f"UndoTree({self.id}, {self.cur}, {self.parent})"
-    
+
     __repr__ = __str__
 
 
 class TextInputer:
+    # 2025-2-17
+    # 管它parent是什么，有renderer就行
+    # 这么多天了，是动都没动啊
     def __init__(self, parent):
         self.text = [""]  # 不可进行重新整体赋值
         self.parent = parent
@@ -113,11 +116,16 @@ class TextInputer:
                 return self.delete(*hs.begin, *hs.end, True)
 
     def clear(self):
+        self.parent.renderer.rem(0, len(self.text) - 1)
+        self.parent.renderer.add(0, 0)
         self.text.clear()
         self.text.append("")
         self.history = UndoTree(None, 0)
         self.cur_history = self.history
         self.save_ver = self.cur_history
+
+    def reset_renderer(self, renderer: Renderer):
+        self.renderer = renderer
 
     def insert(self, y: int, x: int, text: str, is_do=False):
         assert y < len(self.text) and x <= len(self.text[y])

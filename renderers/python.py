@@ -1,3 +1,8 @@
+"""
+2025-3-25
+暂时正确，可惜不知道还能再正确多久
+"""
+
 from renderer import Renderer
 import keyword
 
@@ -278,6 +283,7 @@ class PythonRenderer(Renderer):
 
         # 词进式，每次一个单词
         while x < len(s):
+
             if s[x].isalnum() or s[x] == "_":
                 q = ""
                 while x < len(s) and (s[x].isalnum() or s[x] == "_"):
@@ -313,7 +319,6 @@ class PythonRenderer(Renderer):
                         idtp = PyTok.Module
                     elif st & PyLnSt.AfterDot:
                         idtp = PyTok.Field
-                        st &= ~PyLnSt.AfterDot
                     else:
                         assert False
                     if self._check_lparen(ln, x):
@@ -334,6 +339,8 @@ class PythonRenderer(Renderer):
                             idtp = PyTok.Func
                 for _ in q:
                     res.append(idtp)
+                st &= ~PyLnSt.AfterDot
+
             elif s[x] in "\"'":
                 q = s[x]
                 qcnt = 0
@@ -367,12 +374,15 @@ class PythonRenderer(Renderer):
                         res.append(PyTok.Str)
                 if not (st & PyLnSt.AfterFrom):
                     st = 0
+                st &= ~PyLnSt.AfterDot
+
             elif s[x] in pyOpSet:
                 if s[x] == ".":
                     st |= PyLnSt.AfterDot
                 else:
                     if not (st & PyLnSt.AfterFrom):
                         st = 0
+                    st &= ~PyLnSt.AfterDot
                 x += 1
                 res.append(PyTok.Op)
             elif s[x] == "#":
@@ -385,8 +395,17 @@ class PythonRenderer(Renderer):
                 res.append(PyTok.Other)
         return 0
 
+    def set_ukb(self):
+        old_ukb = self.ukb
+        self.ukb = 0
+        while self.ukb < len(self.text) and (self.sts[self.ukb] != PyLnSt.Unknown
+                                             or self.chs[self.ukb]):
+            self.ukb += 1
+        self.ukb = min(self.ukb, old_ukb)
+
     def render(self, target: int):
-        assert target < len(self.text)
+        # assert target < len(self.text)
+        target = min(target, len(self.text) - 1)
         while target >= self.ukb and self.ukb < len(self.text):
             old_st = self.sts[self.ukb]
             self.sts[self.ukb] = self.render_line(self.ukb)
@@ -403,5 +422,4 @@ class PythonRenderer(Renderer):
 
     def get(self, y: int, x: int) -> str:
         assert y < len(self.text)
-        self.render(y)
         return pyTokDict[self.buf[y][x]]

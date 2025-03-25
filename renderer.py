@@ -10,6 +10,10 @@ class Renderer:
         self.chs = [False for _ in range(len(self.text))]  # Changes
         self.sts = []
 
+    # 补丁，也许Renderer马上也得重写了
+    def set_ukb(self):
+        ...
+
     def change(self, ln: int):
         self.chs[ln] = True
         self.ukb = min(self.ukb, ln)
@@ -40,19 +44,14 @@ class Theme:
         for i in self.d:
             self.d[i] = colorcvt(self.d[i][0]), colorcvt(self.d[i][1])
 
-    def format(self, base, text):
-        return cvt_truecolor(text[1], base[0])
-
-    def get(self, token: str, insel: bool, incursor: bool):
-        if incursor:
-            if self.d[token] == self.d["cursor"]:
-                return self.format(self.d["cursor"], self.d["bg"])
-            return self.format(self.d["cursor"], self.d[token])
+    def get(self, token: str, insel: bool):
         if insel:
-            if self.d[token] == self.d["sel"]:
-                return self.format(self.d["sel"], self.d["bg"])
-            return self.format(self.d["sel"], self.d[token])
-        return self.format(self.d["bg"], self.d[token])
+            if self.d[token][1] == self.d["sel"][0]:
+                return cvt_truecolor(self.d["sel"][0], self.d["bg"][1])
+            return cvt_truecolor(self.d["sel"][0], self.d[token][1])
+        if self.d[token][0] != 0:
+            return cvt_truecolor(self.d[token][0], self.d[token][1])
+        return cvt_truecolor(self.d["bg"][0], self.d[token][1])
 
 
 # 懒得写了
@@ -89,6 +88,7 @@ onedark_theme = {
     "module": (0x282C34, 0xE5C07B),
     "field": (0x282C34, 0xE06C75),
     "param": (0x282C34, 0xD19A66),
+    "modeline": (0x3E4452, 0xABB2BF),
 }
 
 default_theme = onedark_theme

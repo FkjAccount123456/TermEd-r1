@@ -5,9 +5,10 @@ class Screen:
     def __init__(self, h: int, w: int):
         self.update_size(h, w)
         self.changed: set[Pos] = set()
+        self.y, self.x = 0, 0
 
         gotoxy(1, 1)
-        for i in range(h):
+        for _ in range(h):
             print(" " * self.w)
 
     def update_size(self, h: int, w: int):
@@ -28,8 +29,11 @@ class Screen:
             for x in range(self.w):
                 self.change(y, x, ch, color)
 
+    def set_cursor(self, y: int, x: int):
+        self.y, self.x = y, x
+
     def refresh(self):
-        print("\033[0m", end="")
+        print("\033[0m\033[?25l", end="")
         gotoxy(1, 1)
         last = ""
         lastpos = 0, -1
@@ -44,5 +48,5 @@ class Screen:
             last = self.color[y][x]
             lastpos = y, x
         self.changed = set()
-        gotoxy(self.h + 1, 1)
-        print("\033[0m", end="")
+        gotoxy(self.y + 1, self.x + 1)
+        print("\033[0m\033[?25h", end="")
