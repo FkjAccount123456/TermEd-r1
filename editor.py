@@ -1,13 +1,20 @@
-from msvcrt import getwch as getch
-from renderer import Renderer, Theme, default_theme
+from renderer import Theme, default_theme
 from renderers.renderers import get_renderer
 from screen import Screen
-from utils import ed_getch, flush, get_file_ext, get_width
-from textinputer import TextInputer
+from utils import ed_getch, flush, get_file_ext, get_width, gotoxy
 from drawer import Drawer
 from threading import Thread
 from pyperclip import copy, paste
+from buffer import BufferBase
+from ederrors import *
 import os
+import utils
+
+
+def get_terminal_size():
+    w, h = os.get_terminal_size()
+    # h -= 1
+    return w, h
 
 
 HSplit, VSplit = False, True
@@ -27,7 +34,107 @@ class Window:
         ...
 
     def resize(self, h: int, w: int):
+        if h < 10 or w < 20:
+            raise WinResizeError()
+
+    def check_resize(self, h: int, w: int) -> bool:
         ...
+
+    def resize_bottomup(self, h: int, w: int):
+        if not self.check_resize(h, w) or not self.parent:
+            raise WinResizeError()
+        parent, sp_id = self.parent
+        if parent.sp_tp == HSplit:
+            if parent.h - h < 10:
+                parent.resize_bottomup(h + 10, w)
+            if not sp_id:
+                parent.change_pos(h, 0)
+            else:
+                parent.change_pos(parent.h - h, 1)
+            if w != parent.w:
+                parent.resize_bottomup(parent.h, w)
+        else:
+            if parent.w - w - 1 < 20:
+                parent.resize_bottomup(h, w + 20 + 1)
+            if not sp_id:
+                parent.change_pos(w + 1, 0)
+            else:
+                parent.change_pos(parent.w - w, 1)
+            if h != parent.h:
+                parent.resize_bottomup(h, parent.w)
+        # if not isinstance(self, Split):
+        #     self.resize(h, w)
+        # else:
+        #     self.h, self.w = h, w
+
+    # 大道至简啊（
+    def find_right(self, h: int) -> "Buffer | None":
+        if not self.parent:
+            return None
+        if self.parent[0].sp_tp == VSplit and self.parent[1] == 0:
+            return self.parent[0].win2.find_left_buffer(h)
+        return self.parent[0].find_right(h)
+
+    def find_left_buffer(self, h: int) -> "Buffer":
+        if isinstance(self, Buffer):
+            return self
+        assert isinstance(self, Split)
+        if self.sp_tp == VSplit:
+            return self.win1.find_left_buffer(h)
+        if self.sp_pos + self.top <= h:
+            return self.win2.find_left_buffer(h)
+        return self.win1.find_left_buffer(h)
+
+    def find_left(self, h: int) -> "Buffer | None":
+        if not self.parent:
+            return None
+        if self.parent[0].sp_tp == VSplit and self.parent[1] == 1:
+            return self.parent[0].win1.find_right_buffer(h)
+        return self.parent[0].find_left(h)
+
+    def find_right_buffer(self, h: int) -> "Buffer":
+        if isinstance(self, Buffer):
+            return self
+        assert isinstance(self, Split)
+        if self.sp_tp == VSplit:
+            return self.win2.find_right_buffer(h)
+        if self.sp_pos + self.top <= h:
+            return self.win2.find_right_buffer(h)
+        return self.win1.find_right_buffer(h)
+
+    def find_down(self, w: int) -> "Buffer | None":
+        if not self.parent:
+            return None
+        if self.parent[0].sp_tp == HSplit and self.parent[1] == 0:
+            return self.parent[0].win2.find_up_buffer(w)
+        return self.parent[0].find_down(w)
+
+    def find_up_buffer(self, w: int) -> "Buffer":
+        if isinstance(self, Buffer):
+            return self
+        assert isinstance(self, Split)
+        if self.sp_tp == HSplit:
+            return self.win1.find_up_buffer(w)
+        if self.sp_pos + self.left < w:
+            return self.win2.find_up_buffer(w)
+        return self.win1.find_up_buffer(w)
+
+    def find_up(self, w: int) -> "Buffer | None":
+        if not self.parent:
+            return None
+        if self.parent[0].sp_tp == HSplit and self.parent[1] == 1:
+            return self.parent[0].win1.find_down_buffer(w)
+        return self.parent[0].find_up(w)
+
+    def find_down_buffer(self, w: int) -> "Buffer":
+        if isinstance(self, Buffer):
+            return self
+        assert isinstance(self, Split)
+        if self.sp_tp == HSplit:
+            return self.win2.find_down_buffer(w)
+        if self.sp_pos + self.left < w:
+            return self.win2.find_down_buffer(w)
+        return self.win1.find_down_buffer(w)
 
     def move(self, top: int, left: int):
         ...
@@ -37,6 +144,8 @@ class Window:
 
     # 新窗口在右下
     def split(self, sp_tp: bool, buf_tp = None, *args):
+        if self.h < 20 and sp_tp == HSplit or self.w < 40 and sp_tp == VSplit:
+            return
         if buf_tp is None:
             buf_tp = Buffer
         if sp_tp == HSplit:
@@ -65,54 +174,62 @@ class Window:
             new_sp.editor.gwin = new_sp
 
 
-class Buffer(Window):
+class Buffer(Window, BufferBase):
     def __init__(self, top: int, left: int, h: int, w: int,
                  editor: "Editor", parent: "tuple[Split, bool] | None"):
-        super().__init__(top, left, h, w, editor, parent)
-        self.textinputer = TextInputer(self)
-        self.text = self.textinputer.text
-        self.renderer = get_renderer()(self.text)
+        Window.__init__(self, top, left, h, w, editor, parent)
+        BufferBase.__init__(self)
         self.file: str | None = None
         self.drawer = Drawer(editor.screen, self.text, self.left, self.top,
                              self.h - 1, self.w, editor.theme, True)
-        self.y, self.x, self.ideal_x = 0, 0, 0
-        self.sely, self.selx = 0, 0
-        self.textinputer.save()
 
     def close(self):
         super().close()
         if self.file:
             self.editor.fb_maps[os.path.abspath(self.file)].remove(self)
+        # 2025-4-20 要干什么来着？
+        # 这里貌似没有什么要改的了
 
-    def undo(self, n: int = 1):
-        for _ in range(n):
-            ret = self.textinputer.undo()
-            if ret:
-                self.y, self.x = ret
-                self.ideal_x = self.x
+    def reopen(self):
+        assert self.file
+        with open(self.file, "r", encoding="utf-8") as f:
+            text = f.read()
+        self.textinputer.clear()
+        self.textinputer.insert(0, 0, text)
+        self.y = self.ideal_x = self.x = 0
+        self.textinputer.save()
+        self.renderer = get_renderer(get_file_ext(self.file))(self.text)
 
-    def redo(self, n: int = 1):
-        for _ in range(n):
-            ret = self.textinputer.redo()
-            if ret:
-                self.y, self.x = ret
-            self.ideal_x = self.x
-
-    def open_file(self, arg: str):
+    def open_file(self, arg: str, force=False):
+        arg = arg.strip()
         old = self.file
-        if arg != "":
+        if not arg:
+            if self.file and force and not self.textinputer.is_saved() and os.path.exists(self.file):
+                self.reopen()
+            return
+        if arg:
+            if self.file and os.path.abspath(self.file) == os.path.abspath(arg):
+                if force and not self.textinputer.is_saved() and os.path.exists(self.file):
+                    self.reopen()
+                return
             self.file = arg
         if self.file and (path := os.path.abspath(self.file)) in self.editor.fb_maps\
                 and self.editor.fb_maps[path]:
             # 大换血啊（
-            for model in self.editor.fb_maps[path]:
-                break
+            #
+            model = self.editor.fb_maps[path].pop()
+            self.editor.fb_maps[path].add(model)
             self.textinputer = model.textinputer
             self.renderer = model.renderer
             self.drawer.text = self.textinputer.text
             self.text = self.textinputer.text
-        elif isinstance(self.file, str):
-            try:
+        elif self.file:
+            if not os.path.exists(self.file):
+                self.textinputer.clear()
+                self.y = self.ideal_x = self.x = 0
+                self.textinputer.save()
+                self.renderer = get_renderer(get_file_ext(self.file))(self.text)
+            else:
                 with open(self.file, "r", encoding="utf-8") as f:
                     text = f.read()
                 self.textinputer.clear()
@@ -120,9 +237,7 @@ class Buffer(Window):
                 self.y = self.ideal_x = self.x = 0
                 self.textinputer.save()
                 self.renderer = get_renderer(get_file_ext(self.file))(self.text)
-            except FileNotFoundError:
-                self.file = old
-        if old is not None and os.path.exists(old):
+        if old is not None:
             self.editor.fb_maps[os.path.abspath(old)].remove(self)
         if self.file is not None:
             if os.path.abspath(self.file) not in self.editor.fb_maps:
@@ -143,7 +258,7 @@ class Buffer(Window):
                     self.textinputer.save()
                     if not old_file or get_file_ext(self.file) != get_file_ext(old_file):
                         self.renderer = get_renderer(get_file_ext(self.file))(self.text)
-                except FileNotFoundError:
+                except:
                     self.file = old_file
             if old_file is not None and old_file != self.file and os.path.exists(old_file):
                 if os.path.abspath(old_file) in self.editor.fb_maps:
@@ -154,10 +269,6 @@ class Buffer(Window):
     def insert_tab(self, *_):
         self.y, self.x = self.textinputer.insert(self.y, self.x,
                                                  " " * self.editor.tabsize)
-        self.ideal_x = self.x
-
-    def insert(self, s: str):
-        self.y, self.x = self.textinputer.insert(self.y, self.x, s)
         self.ideal_x = self.x
 
     def paste_before_cursor(self, n: int = 1):
@@ -183,63 +294,6 @@ class Buffer(Window):
         self.y, self.x = self.textinputer.delete(self.y, self.x, self.sely, self.selx)
         self.editor.mode = "NORMAL"
 
-    def del_before_cursor(self, *_):
-        if self.x:
-            self.y, self.x = self.textinputer.delete(
-                self.y, self.x - 1, self.y, self.x - 1
-            )
-        elif self.y:
-            self.y, self.x = self.textinputer.delete(
-                self.y - 1,
-                len(self.text[self.y - 1]),
-                self.y - 1,
-                len(self.text[self.y - 1]),
-            )
-        self.ideal_x = self.x
-
-    def del_at_cursor(self, n: int = 1):
-        for _ in range(n):
-            self.y, self.x = self.textinputer.delete(self.y, self.x, self.y, self.x)
-            self.ideal_x = self.x
-
-    def cursor_left(self, n: int = 1):
-        for _ in range(n):
-            if self.x:
-                self.x -= 1
-            else:
-                break
-        self.ideal_x = self.x
-
-    def cursor_right(self, n: int = 1):
-        for _ in range(n):
-            if self.x < len(self.text[self.y]):
-                self.x += 1
-            else:
-                break
-        self.ideal_x = self.x
-
-    def cursor_up(self, n: int = 1):
-        for _ in range(n):
-            if self.y:
-                self.y -= 1
-            else:
-                break
-        self.x = min(len(self.text[self.y]), self.ideal_x)
-
-    def cursor_down(self, n: int = 1):
-        for _ in range(n):
-            if self.y + 1 < len(self.text):
-                self.y += 1
-            else:
-                break
-        self.x = min(len(self.text[self.y]), self.ideal_x)
-
-    def cursor_home(self, *_):
-        self.x = self.ideal_x = 0
-
-    def cursor_end(self, *_):
-        self.x = len(self.text[self.y])
-
     def cursor_pageup(self, n: int = 1):
         for _ in range(n):
             self.y, _ = self.drawer.scroll_up(
@@ -262,124 +316,13 @@ class Buffer(Window):
                 self.y = len(self.text) - 1
         self.x = min(len(self.text[self.y]), self.ideal_x)
 
-    def cursor_start(self, *_):
-        self.x = 0
-        while (
-            self.x < len(self.text[self.y]) and self.text[self.y][self.x].isspace()
-        ):
-            self.x += 1
-        self.ideal_x = self.x
-
-    def cursor_head(self, *_):
-        self.x = self.y = self.ideal_x = 0
-
-    def cursor_tail(self, n: int = -1):
-        if n == -1:
-            self.y = len(self.text) - 1
-            self.ideal_x = self.x = len(self.text[self.y])
-        else:
-            self.y = min(len(self.text) - 1, n - 1)
-            self.ideal_x = self.x = len(self.text[self.y])
-
-    def cursor_next_word(self, n: int = 1):
-        for _ in range(n):
-            if self.x == len(self.text[self.y]):
-                if self.y < len(self.text) - 1:
-                    self.y += 1
-                    self.x = 0
-            elif self.text[self.y][self.x].isalnum() or self.text[self.y][self.x] == '_':
-                while self.x < len(self.text[self.y]) and \
-                        (self.text[self.y][self.x].isalnum() or
-                         self.text[self.y][self.x] == '_'):
-                    self.x += 1
-            elif self.text[self.y][self.x].isspace():
-                while self.x < len(self.text[self.y]) and self.text[self.y][self.x].isspace():
-                    self.x += 1
-            else:
-                while self.x < len(self.text[self.y]) and \
-                        not (self.text[self.y][self.x].isalnum() or
-                             self.text[self.y][self.x].isspace()):
-                    self.x += 1
-        self.ideal_x = self.x
-
-    def cursor_prev_word(self, n: int = 1):
-        for _ in range(n):
-            if self.x == 0:
-                if self.y > 0:
-                    self.y -= 1
-                    self.x = len(self.text[self.y])
-            elif self.text[self.y][self.x - 1].isalnum() or self.text[self.y][self.x - 1] == '_':
-                while self.x > 0 and (self.text[self.y][self.x - 1].isalnum() or
-                                      self.text[self.y][self.x - 1] == '_'):
-                    self.x -= 1
-            elif self.text[self.y][self.x - 1].isspace():
-                while self.x > 0 and self.text[self.y][self.x - 1].isspace():
-                    self.x -= 1
-            else:
-                while self.x > 0 and not (self.text[self.y][self.x - 1].isalnum() or
-                                          self.text[self.y][self.x - 1].isspace()):
-                    self.x -= 1
-        self.ideal_x = self.x
-
-    def cursor_next_char(self, n: int = 1):
-        for _ in range(n):
-            if self.x >= len(self.text[self.y]):
-                if self.y < len(self.text) - 1:
-                    self.y += 1
-                    self.x = 0
-                else:
-                    break
-            else:
-                self.x += 1
-        self.ideal_x = self.x
-
-    def cursor_prev_char(self, n: int = 1):
-        for _ in range(n):
-            if self.x == 0:
-                if self.y > 0:
-                    self.y -= 1
-                    self.x = len(self.text[self.y])
-                else:
-                    break
-            else:
-                self.x -= 1
-        self.ideal_x = self.x
-
-    def at_cursor(self):
-        if self.x < len(self.text[self.y]):
-            return self.text[self.y][self.x]
-        elif self.y < len(self.text) - 1:
-            return '\n'
-        else:
-            return None
-
-    def nxt_eof(self):
-        return self.y == len(self.text) - 1 and self.x == len(self.text[self.y])
-
-    # 严重破坏代码逻辑，不过现在不知道怎么改
-    def cursor_fnxt_char(self, n: int = 1):
-        ch = getch()
-        if not ch.isprintable() and ch not in ('\r', '\n', ' ', '\t'):
-            return
-        if ch == '\r':
-            ch = '\n'
-        for _ in range(n):
-            self.cursor_next_char()
-            while self.at_cursor() not in (ch, None):
-                self.cursor_next_char()
-
-    def cursor_fprv_char(self, n: int = 1):
-        ch = getch()
-        if ch == '\r':
-            ch = '\n'
-        for _ in range(n):
-            self.cursor_prev_char()
-            while self.at_cursor() != ch and not (self.y == self.x == 0):
-                self.cursor_prev_char()
-
     def resize(self, h: int, w: int):
+        Window.resize(self, h, w)
         self.h, self.w = h, w
         self.drawer.update_size(self.h - 1, self.w)
+
+    def check_resize(self, h: int, w: int):
+        return h >= 10 and w >= 20
 
     def move(self, top: int, left: int):
         self.top, self.left = top, left
@@ -387,6 +330,11 @@ class Buffer(Window):
 
     def find_buffer(self) -> "Buffer | None":
         return self
+
+    def cursor_real_pos(self):
+        self.drawer.scroll_buffer(self.y, self.x)
+        cursor = self.drawer.draw_cursor(self.y, self.x)
+        return cursor[0] + self.top, cursor[1] + self.left
 
     def draw(self):
         self.drawer.scroll_buffer(self.y, self.x)
@@ -399,7 +347,8 @@ class Buffer(Window):
             self.drawer.draw(self.renderer)
         if self.editor.cur == self and self.editor.mode != "COMMAND":
             cursor = self.drawer.draw_cursor(self.y, self.x)
-            self.editor.screen.set_cursor(cursor[0] + self.top, cursor[1] + self.left)
+            cursor_real_pos = cursor[0] + self.top, cursor[1] + self.left
+            self.editor.screen.set_cursor(*cursor_real_pos)
 
         if self.file:
             file = self.file
@@ -427,9 +376,14 @@ class Buffer(Window):
                                       self.editor.theme.get("modeline", False))
             shw += 1
 
+        # self.editor.debug_points.extend([(self.top, self.left),
+        #                                  (self.top + self.h - 1, self.left + self.w - 1)])
+
 
 # Debug神器
-class TextWindow(Window):
+# 2025-4-22
+# 禁用非Buffer/Split窗口
+class deprecated_TextWindow(Window):
     def __init__(self, top: int, left: int, h: int, w: int,
                  editor: "Editor", parent: "tuple[Split, bool] | None",
                  name: str):
@@ -447,6 +401,7 @@ class TextWindow(Window):
         return None
 
     def resize(self, h: int, w: int):
+        super().resize(h, w)
         self.h, self.w = h, w
         self.drawer.update_size(self.h - 1, self.w)
 
@@ -473,6 +428,9 @@ class TextWindow(Window):
                                       self.editor.theme.get("modeline", False))
             shw += 1
 
+def TextWindow(*_):
+    raise EditorDeprecatedError("TextWindow")
+
 
 class Split(Window):
     def __init__(self, top: int, left: int, h: int, w: int,
@@ -483,14 +441,30 @@ class Split(Window):
         self.win1: Window
         self.win2: Window
 
-    def change_pos(self, pos: int):
-        if self.sp_tp == HSplit:
-            self.win1.resize(self.h, pos)
-            self.win2.resize(self.h, self.w - pos - 1)
+    def change_pos(self, pos: int, ignore_id=-1):
+        if self.sp_tp == VSplit:
+            if self.h < 10 or pos < 20 or self.w - pos < 20:
+                raise WinResizeError()
+            if ignore_id != 0:
+                self.win1.resize(self.h, pos - 1)
+            else:
+                self.win1.h, self.win1.w = self.h, pos - 1
+            if ignore_id != 1:
+                self.win2.resize(self.h, self.w - pos)
+            else:
+                self.win2.h, self.win2.w = self.h, self.w - pos
             self.win2.move(self.top, self.left + pos)
         else:
-            self.win1.resize(pos, self.w)
-            self.win2.resize(self.h - pos, self.w)
+            if pos < 10 or self.h - pos < 10 or self.w < 20:
+                raise WinResizeError()
+            if ignore_id != 0:
+                self.win1.resize(pos, self.w)
+            else:
+                self.win1.h, self.win1.w = pos, self.w
+            if ignore_id != 1:
+                self.win2.resize(self.h - pos, self.w)
+            else:
+                self.win2.h, self.win2.w = self.h - pos, self.w
             self.win2.move(self.top + pos, self.left)
         self.sp_pos = pos
 
@@ -500,28 +474,45 @@ class Split(Window):
         return self.win2.find_buffer()
 
     def resize(self, h: int, w: int):
+        super().resize(h, w)
         if self.sp_tp == HSplit:
-            upper_h = self.sp_pos * h // self.h
+            upper_h = max(10, self.sp_pos * h // self.h)
+            if upper_h < 10 or h - upper_h < 10 or w < 20:
+                raise WinResizeError()
             self.win1.resize(upper_h, w)
             self.win2.resize(h - upper_h, w)
             self.win2.move(self.top + upper_h, self.left)
             self.sp_pos = upper_h
         else:
-            left_w = (self.sp_pos - 1) * w // self.w
+            left_w = max(20, (self.sp_pos - 1) * w // self.w)
+            if h < 10 or left_w < 20 or w - left_w - 1 < 20:
+                raise WinResizeError()
             self.win1.resize(h, left_w)
             self.win2.resize(h, w - left_w - 1)
             self.win2.move(self.top, self.left + left_w + 1)
             self.sp_pos = left_w + 1
         self.h, self.w = h, w
 
+    def check_resize(self, h: int, w: int) -> bool:
+        if self.sp_tp == HSplit:
+            upper_h = max(10, self.sp_pos * h // self.h)
+            return (h >= 20 and w >= 20
+                    and self.win1.check_resize(upper_h, w)
+                    and self.win2.check_resize(h - upper_h, w))
+        else:
+            left_w = max(20, (self.sp_pos - 1) * w // self.w)
+            return (h >= 10 and left_w >= 20
+                    and self.win1.check_resize(h, left_w)
+                    and self.win2.check_resize(h, w - left_w - 1))
+
     def move(self, top: int, left: int):
         self.win1.move(top, left)
         if self.sp_tp == HSplit:
             self.win2.move(top + self.sp_pos, left)
         else:
-            self.win2.move(top, left + self.sp_pos + 1)
+            self.win2.move(top, left + self.sp_pos)
         self.top, self.left = top, left
-    
+
     def draw(self):
         self.win1.draw()
         self.win2.draw()
@@ -539,6 +530,7 @@ class Editor:
         self.screen = Screen(self.h, self.w)
         self.theme = Theme(default_theme)
         self.linum = True
+        self.async_update_size = False
         self.cur: Buffer = Buffer(0, 0, self.h - 1, self.w, self, None)
         self.gwin: Window = self.cur
         self.running = False
@@ -599,6 +591,18 @@ class Editor:
                 "<bs>": lambda *n: self.cur.cursor_prev_char(*n),
                 "f": lambda *n: self.cur.cursor_fnxt_char(*n),
                 "F": lambda *n: self.cur.cursor_fprv_char(*n),
+
+                "<C-up>": self.key_resize_h_sub,
+                "<C-down>": self.key_resize_h_add,
+                "<C-left>": self.key_resize_v_sub,
+                "<C-right>": self.key_resize_v_add,
+
+                ";": {
+                    "h": self.key_winmove_left,
+                    "l": self.key_winmove_right,
+                    "k": self.key_winmove_up,
+                    "j": self.key_winmove_down,
+                },
             },
             "VISUAL": {
                 "<esc>": self.mode_normal,
@@ -652,6 +656,9 @@ class Editor:
             "q": self.accept_cmd_close_window,
             "qa": self.quit_editor,
             "o": lambda *n: self.cur.open_file(*n),
+            "o!": lambda *n: self.cur.open_file(*n, force=True),
+            "e": lambda *n: self.cur.open_file(*n),
+            "e!": lambda *n: self.cur.open_file(*n, force=True),
             "w": lambda *n: self.cur.save_file(*n),
             "sp": self.accept_cmd_hsplit,
             "vsp": self.accept_cmd_vsplit,
@@ -663,6 +670,8 @@ class Editor:
             "ss": self.accept_cmd_set_cur,
             "so": self.accept_cmd_select_sibling,  # 令我想起Emacs
             "sg": self.accept_cmd_goto_by_id,
+            "wh": self.accept_cmd_resize_h,
+            "wv": self.accept_cmd_resize_v,
         }
         self.mode = "NORMAL"
         self.cur_cmd = ""
@@ -671,6 +680,8 @@ class Editor:
 
         self.tabsize = 4
         self.selected_win: Window = self.cur
+
+        self.debug_points: list[tuple[int, int]] = []
 
         # self.gwin.split(True, TextWindow, "Debug Window")
         # self.debug_win: TextWindow = self.gwin.win2
@@ -734,14 +745,14 @@ class Editor:
     def accept_cmd_select_parent(self, *_):
         if self.selected_win.parent:
             self.selected_win = self.selected_win.parent[0]
-    
+
     def accept_cmd_select_cur(self, *_):
         self.selected_win = self.cur
 
     def accept_cmd_split_1(self, *_):
         if isinstance(self.selected_win, Split):
             self.selected_win = self.selected_win.win1
-    
+
     def accept_cmd_split_2(self, *_):
         if isinstance(self.selected_win, Split):
             self.selected_win = self.selected_win.win2
@@ -766,6 +777,68 @@ class Editor:
             self.selected_win = self.win_ids[win_id]
             if isinstance(self.selected_win, Buffer):
                 self.cur = self.selected_win
+
+    def accept_cmd_resize_h(self, arg: str):
+        try:
+            if arg[0] == '+':
+                self.cur.resize_bottomup(self.cur.h + int(arg[1:]), self.cur.w)
+            elif arg[0] == '-':
+                self.cur.resize_bottomup(self.cur.h - int(arg[1:]), self.cur.w)
+            else:
+                self.cur.resize(int(arg), self.cur.w)
+        except WinResizeError:
+            pass
+
+    def accept_cmd_resize_v(self, arg: str):
+        try:
+            if arg[0] == '+':
+                self.cur.resize(self.cur.h, self.cur.w + int(arg[1:]))
+            elif arg[0] == '-':
+                self.cur.resize(self.cur.h, self.cur.w - int(arg[1:]))
+            else:
+                self.cur.resize(self.cur.h, int(arg))
+        except WinResizeError:
+            pass
+
+    def key_resize_h_add(self, n=1):
+        try:
+            self.cur.resize_bottomup(self.cur.h + n, self.cur.w)
+        except WinResizeError:
+            pass
+
+    def key_resize_h_sub(self, n=1):
+        try:
+            self.cur.resize_bottomup(self.cur.h - n, self.cur.w)
+        except WinResizeError:
+            pass
+
+    def key_resize_v_add(self, n=1):
+        try:
+            self.cur.resize_bottomup(self.cur.h, self.cur.w + n)
+        except WinResizeError:
+            pass
+
+    def key_resize_v_sub(self, n=1):
+        try:
+            self.cur.resize_bottomup(self.cur.h, self.cur.w - n)
+        except WinResizeError:
+            pass
+
+    def key_winmove_right(self, *_):
+        if (win := self.cur.find_right(self.cur.cursor_real_pos()[0])):
+            self.cur = self.selected_win = win
+
+    def key_winmove_left(self, *_):
+        if (win := self.cur.find_left(self.cur.cursor_real_pos()[0])):
+            self.cur = self.selected_win = win
+
+    def key_winmove_up(self, *_):
+        if (win := self.cur.find_up(self.cur.cursor_real_pos()[1])):
+            self.cur = self.selected_win = win
+
+    def key_winmove_down(self, *_):
+        if (win := self.cur.find_down(self.cur.cursor_real_pos()[1])):
+            self.cur = self.selected_win = win
 
     def cmd_insert(self, key: str):
         self.cur_cmd = self.cur_cmd[:self.cmd_pos] + \
@@ -815,6 +888,8 @@ class Editor:
         return new_id
 
     def draw(self):
+        self.debug_points = []
+
         if self.mode == "COMMAND":
             line = self.cur_cmd
         elif self.message:
@@ -858,32 +933,42 @@ class Editor:
                                self.theme.get("text", False))
             sh += 1
 
-        self.gwin.resize(self.h - nlines, self.w)
+        try:
+            self.gwin.resize(self.h - nlines, self.w)
+        except WinResizeError:
+            pass
         self.gwin.draw()
+        # utils.gotoxy(self.h + 1, 1)
+        # print((self.cur.h, self.cur.w), end="")
+        self.screen.update_debug_points(self.debug_points)
         self.screen.refresh()
         flush()
 
     def resize(self, h: int, w: int):
         self.h, self.w = h, w
         self.screen.update_size(h, w)
-        self.cur.resize(h - 1, w)
+        self.gwin.resize(h - 1, w)
 
     def update_size(self):
-        if (self.w, self.h) != (new_size := os.get_terminal_size()):
-            self.resize(new_size.lines, new_size.columns)
+        if (self.w, self.h) != (new_size := get_terminal_size()):
+            self.resize(new_size[1], new_size[0])
             self.draw()
 
     def getch(self):
         self.cur_key = ed_getch()
 
     def async_getch(self) -> str:
-        self.cur_key = ""
-        getch_thread = Thread(target=self.getch, args=(), daemon=True)
-        getch_thread.start()
+        if self.async_update_size:
+            self.cur_key = ""
+            getch_thread = Thread(target=self.getch, args=(), daemon=True)
+            getch_thread.start()
 
-        while not self.cur_key:
+            while not self.cur_key:
+                self.update_size()
+            return self.cur_key
+        else:
             self.update_size()
-        return self.cur_key
+            return ed_getch()
 
     def mainloop(self):
         self.running = True

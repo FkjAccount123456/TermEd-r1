@@ -6,6 +6,7 @@ class Screen:
         self.update_size(h, w)
         self.changed: set[Pos] = set()
         self.y, self.x = 0, 0
+        self.debug_points: list[tuple[int, int]] = []
 
         gotoxy(1, 1)
         for _ in range(h):
@@ -32,21 +33,40 @@ class Screen:
     def set_cursor(self, y: int, x: int):
         self.y, self.x = y, x
 
+    def update_debug_points(self, debug_points: list[tuple[int, int]]):
+        self.debug_points = debug_points
+
     def refresh(self):
         print("\033[0m\033[?25l", end="")
         gotoxy(1, 1)
-        last = ""
-        lastpos = 0, -1
-        for y, x in sorted(self.changed):
-            # print(y, x, end=' ')
-            if y != lastpos[0] or x != lastpos[1] + 1:
-                gotoxy(y + 1, x + 1)
-            if last == self.color[y][x]:
-                print(self.color[y][x] + self.data[y][x], end="")
-            else:
-                print("\033[0m" + self.color[y][x] + self.data[y][x], end="")
-            last = self.color[y][x]
-            lastpos = y, x
+        if not self.debug_points:
+            last = ""
+            lastpos = 0, -1
+            for y, x in sorted(self.changed):
+                # print(y, x, end=' ')
+                if y != lastpos[0] or x != lastpos[1] + 1:
+                    gotoxy(y + 1, x + 1)
+                if last == self.color[y][x]:
+                    print(self.color[y][x] + self.data[y][x], end="")
+                else:
+                    print("\033[0m" + self.color[y][x] + self.data[y][x], end="")
+                last = self.color[y][x]
+                lastpos = y, x
+        else:
+            last = ""
+            for y in range(self.h):
+                gotoxy(y + 1, 1)
+                for x in range(self.w):
+                    if self.color[y][x] != last:
+                        print(self.color[y][x] + self.data[y][x], end="")
+                        last = self.color[y][x]
+                    else:
+                        print(self.data[y][x], end="")
         self.changed = set()
+
+        for y, x in self.debug_points:
+            gotoxy(y + 1, x + 1)
+            print("\033[41m \033[0m", end="")
+
         gotoxy(self.y + 1, self.x + 1)
         print("\033[0m\033[?25h", end="")

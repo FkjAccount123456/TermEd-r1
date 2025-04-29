@@ -9,3 +9,6 @@ chat.txt
 tests/
 share/
 test.py
+*.temp
+.mypy_cache/
+.vscode/

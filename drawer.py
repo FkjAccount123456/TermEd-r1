@@ -66,7 +66,7 @@ class Drawer:
                     ys = self.get_line_hw(self.text[y])[0] - 1
                     nmove -= 1
         return y, ys
-    
+
     def scroll_down(self, y: int, ys: int, nmove: int):
         assert nmove > 0
         curline_h = self.get_line_hw(self.text[y])[0] - 1
