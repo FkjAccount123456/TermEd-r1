@@ -586,8 +586,8 @@ class Buffer(Window, BufferBase):
                 start = cursor_real_pos[0] + 1
             for ln in r:
                 self.draw_text(ln, menu_left, menu_w,
-                               self.cmp_menu[ln - start],
-                               "completion" if ln - start != self.cmp_select else 'completion_selected',
+                               self.cmp_menu[ln - start + self.cmp_scroll],
+                               "completion" if ln - start + self.cmp_scroll != self.cmp_select else 'completion_selected',
                                1)
 
         # self.editor.debug_points.extend([(self.top, self.left),
