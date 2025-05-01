@@ -122,6 +122,20 @@ class BufferBase:
                 self.x += 1
         self.ideal_x = self.x
 
+    def cursor_next_word_end(self, n: int = 1):
+        for _ in range(n):
+            if self.y >= len(self.text) - 1 and self.x >= len(self.text[self.y]) - 1:
+                break
+            if self.x >= len(self.text[self.y]):
+                self.y += 1
+                self.x = 0
+                continue
+            self.x += 1
+            cur_tp = get_char_type(self.text[self.y][self.x])
+            while self.x + 1 < len(self.text[self.y]) and get_char_type(self.text[self.y][self.x + 1]) == cur_tp:
+                self.x += 1
+        self.ideal_x = self.x
+
     def cursor_prev_word(self, n: int = 1):
         for _ in range(n):
             if self.x == self.y == 0:
@@ -135,6 +149,24 @@ class BufferBase:
             while self.x > 0 and get_char_type(self.text[self.y][self.x - 1]) == cur_tp:
                 self.x -= 1
         self.ideal_x = self.x
+
+    def get_next_pos(self, y: int, x: int):
+        if x >= len(self.text[y]):
+            if y < len(self.text) - 1:
+                return y + 1, 0
+            else:
+                return y, len(self.text[y])
+        else:
+            return y, x + 1
+
+    def get_prev_pos(self, y: int, x: int):
+        if x == 0:
+            if y > 0:
+                return y - 1, len(self.text[y - 1])
+            else:
+                return y, 0
+        else:
+            return y, x - 1
 
     def cursor_next_char(self, n: int = 1):
         for _ in range(n):

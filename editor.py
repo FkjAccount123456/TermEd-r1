@@ -2,7 +2,7 @@ from typing import Callable
 from renderer import Theme, default_theme
 from renderers.renderers import get_renderer
 from screen import Screen
-from utils import ed_getch, flush, get_char_type, get_file_ext, get_width, gotoxy
+from utils import ed_getch, flush, get_char_type, get_file_ext, get_width
 from drawer import Drawer
 from threading import Thread
 from pyperclip import copy, paste
@@ -300,7 +300,7 @@ class Buffer(Window, BufferBase):
     def select_cut(self, *_):
         copy(self.textinputer.get(self.sely, self.selx, self.y, self.x))
         self.y, self.x = self.textinputer.delete(self.sely, self.selx, self.y, self.x)
-        self.editor.mode = "NORMAL"
+        self.editor.mode = "INSERT"
 
     def select_del(self, *_):
         self.y, self.x = self.textinputer.delete(self.y, self.x, self.sely, self.selx)
@@ -327,6 +327,107 @@ class Buffer(Window, BufferBase):
             if self.y >= len(self.text):
                 self.y = len(self.text) - 1
         self.x = min(len(self.text[self.y]), self.ideal_x)
+
+    def get_range_to(self, move_fn: Callable, *args):
+        y, x, ideal_x = self.y, self.x, self.ideal_x
+        move_fn(*args)
+        y1, x1 = self.y, self.x
+        if (y1, x1) < (y, x):
+            y1, x1, y, x = y, x, y1, x1
+        self.y, self.x, self.ideal_x = y, x, ideal_x
+        return (y, x), (y1, x1)
+
+    def delete_to(self, move_fn: Callable, *args):
+        (y, x), (y1, x1) = self.get_range_to(move_fn, *args)
+        self.textinputer.delete(y, x, y1, x1)
+
+    def delete_in(self, range_fn: Callable, *args):
+        r = range_fn(*args)
+        if r:
+            self.y, self.x = self.textinputer.delete(*r[0], *r[1])
+            self.ideal_x = self.x
+
+    def change_to(self, move_fn: Callable, *args):
+        self.delete_to(move_fn, *args)
+        self.editor.mode = "INSERT"
+
+    def change_in(self, range_fn: Callable, *args):
+        self.delete_in(range_fn, *args)
+        self.editor.mode = "INSERT"
+
+    def yank_to(self, move_fn: Callable, *args):
+        (y, x), (y1, x1) = self.get_range_to(move_fn, *args)
+        self.textinputer.yank(y, x, y1, x1)
+
+    def yank_in(self, range_fn: Callable, *args):
+        r = range_fn(*args)
+        if r:
+            self.textinputer.yank(*r[0], *r[1])
+
+    def select_in(self, range_fn: Callable, *args):
+        r = range_fn(*args)
+        if r:
+            begin, end = r
+            self.sely, self.selx = begin
+            self.y, self.x = end
+            self.ideal_x = self.x
+
+    def key_normal_a(self, *_):
+        if self.x < len(self.text[self.y]):
+            self.x += 1
+            self.ideal_x = self.x
+        self.editor.mode = "INSERT"
+
+    def key_normal_A(self, *_):
+        self.x = self.ideal_x = len(self.text[self.y])
+        self.editor.mode = "INSERT"
+
+    def key_normal_I(self, *_):
+        self.editor.mode = "INSERT"
+        self.cursor_start()
+
+    def key_normal_o(self, *_):
+        self.key_normal_A()
+        self.insert("\n")
+
+    def key_normal_O(self, *_):
+        self.key_normal_I()
+        self.insert("\n")
+        self.cursor_prev_char()
+
+    def key_normal_s(self, n=1):
+        self.editor.mode_insert()
+        for _ in range(n):
+            if self.x < len(self.text[self.y]):
+                self.textinputer.delete(self.y, self.x, self.y, self.x)
+
+    def key_normal_S(self, *_):
+        self.key_normal_I()
+        self.textinputer.delete(self.y, 0, self.y, len(self.text[self.y]) - 1)
+
+    def key_normal_x(self, n=1):
+        for _ in range(n):
+            self.textinputer.delete(self.y, self.x, self.y, self.x)
+
+    def key_normal_D(self, *_):
+        self.textinputer.delete(self.y, self.x, self.y, len(self.text[self.y]) - 1)
+
+    def key_normal_C(self, *_):
+        self.textinputer.delete(self.y, self.x, self.y, len(self.text[self.y]) - 1)
+        self.editor.mode_insert()
+
+    def key_del_line(self, n=1):
+        for _ in range(n):
+            if self.y < len(self.text):
+                self.textinputer.delete(self.y, 0, self.y, len(self.text[self.y]))
+            else:
+                break
+
+    def key_yank_line(self, n=1):
+        res = "\n".join(self.text[self.y: self.y + n])
+        if self.y + n < len(self.text):
+            res += "\n"
+        copy(res)
 
     def cmp_select_next(self):
         if self.cmp_select == len(self.cmp_menu) - 1:
@@ -675,6 +776,18 @@ class Editor:
             },
             "NORMAL": {
                 "i": self.mode_insert,
+                "a": lambda *n: self.cur.key_normal_a(*n),
+                "A": lambda *n: self.cur.key_normal_A(*n),
+                "I": lambda *n: self.cur.key_normal_I(*n),
+                "o": lambda *n: self.cur.key_normal_o(*n),
+                "O": lambda *n: self.cur.key_normal_O(*n),
+                "s": lambda *n: self.cur.key_normal_s(*n),
+                "S": lambda *n: self.cur.key_normal_S(*n),
+
+                "x": lambda *n: self.cur.key_normal_x(*n),
+                "D": lambda *n: self.cur.key_normal_D(*n),
+                "C": lambda *n: self.cur.key_normal_C(*n),
+
                 "v": self.mode_select,
                 ":": lambda *_: self.mode_command(":"),
 
@@ -703,6 +816,7 @@ class Editor:
                 },
                 "G": lambda *n: self.cur.cursor_tail(*n),
                 "w": lambda *n: self.cur.cursor_next_word(*n),
+                "e": lambda *n: self.cur.cursor_next_word_end(*n),
                 "b": lambda *n: self.cur.cursor_prev_word(*n),
                 "<space>": lambda *n: self.cur.cursor_next_char(*n),
                 "<bs>": lambda *n: self.cur.cursor_prev_char(*n),
@@ -719,6 +833,102 @@ class Editor:
                     "l": self.key_winmove_right,
                     "k": self.key_winmove_up,
                     "j": self.key_winmove_down,
+                },
+
+                "d": {
+                    "h": lambda *n: self.cur.delete_to(self.cur.cursor_left, *n),
+                    "l": lambda *n: self.cur.delete_to(self.cur.cursor_right, *n),
+                    "k": lambda *n: self.cur.delete_to(self.cur.cursor_up, *n),
+                    "j": lambda *n: self.cur.delete_to(self.cur.cursor_down, *n),
+                    "<up>": lambda *n: self.cur.delete_to(self.cur.cursor_up, *n),
+                    "<down>": lambda *n: self.cur.delete_to(self.cur.cursor_down, *n),
+                    "<left>": lambda *n: self.cur.delete_to(self.cur.cursor_left, *n),
+                    "<right>": lambda *n: self.cur.delete_to(self.cur.cursor_right, *n),
+                    "<pageup>": lambda *n: self.cur.delete_to(self.cur.cursor_pageup, *n),
+                    "<pagedown>": lambda *n: self.cur.delete_to(self.cur.cursor_pagedown, *n),
+                    "<home>": lambda *n: self.cur.delete_to(self.cur.cursor_home, *n),
+                    "<end>": lambda *n: self.cur.delete_to(self.cur.cursor_end, *n),
+                    "w": lambda *n: self.cur.delete_to(self.cur.cursor_next_word_end, *n),
+                    "e": lambda *n: self.cur.delete_to(self.cur.cursor_next_word_end, *n),
+                    "b": lambda *n: self.cur.delete_to(self.cur.cursor_prev_word, *n),
+                    "g": {
+                        "g": lambda *n: self.cur.delete_to(self.cur.cursor_head, *n),
+                    },
+                    "G": lambda *n: self.cur.delete_to(self.cur.cursor_tail, *n),
+                    "0": lambda *n: self.cur.delete_to(self.cur.cursor_head, *n),
+                    "$": lambda *n: self.cur.delete_to(self.cur.cursor_tail, *n),
+                    "^": lambda *n: self.cur.delete_to(self.cur.cursor_start, *n),
+                    " ": lambda *n: self.cur.delete_to(self.cur.cursor_next_char, *n),
+                    "<bs>": lambda *n: self.cur.delete_to(self.cur.cursor_prev_char, *n),
+                    "f": lambda *n: self.cur.delete_to(self.cur.cursor_fnxt_char, *n),
+                    "F": lambda *n: self.cur.delete_to(self.cur.cursor_fprv_char, *n),
+                    "i": {
+                        "w": lambda *n: self.cur.delete_in(self.cur.get_range_cur_word, *n),
+                    },
+                    "d": lambda *n: self.cur.key_del_line(*n),
+                },
+                "c": {
+                    "h": lambda *n: self.cur.change_to(self.cur.cursor_left, *n),
+                    "l": lambda *n: self.cur.change_to(self.cur.cursor_right, *n),
+                    "k": lambda *n: self.cur.change_to(self.cur.cursor_up, *n),
+                    "j": lambda *n: self.cur.change_to(self.cur.cursor_down, *n),
+                    "<up>": lambda *n: self.cur.change_to(self.cur.cursor_up, *n),
+                    "<down>": lambda *n: self.cur.change_to(self.cur.cursor_down, *n),
+                    "<left>": lambda *n: self.cur.change_to(self.cur.cursor_left, *n),
+                    "<right>": lambda *n: self.cur.change_to(self.cur.cursor_right, *n),
+                    "<pageup>": lambda *n: self.cur.change_to(self.cur.cursor_pageup, *n),
+                    "<pagedown>": lambda *n: self.cur.change_to(self.cur.cursor_pagedown, *n),
+                    "<home>": lambda *n: self.cur.change_to(self.cur.cursor_home, *n),
+                    "<end>": lambda *n: self.cur.change_to(self.cur.cursor_end, *n),
+                    "w": lambda *n: self.cur.change_to(self.cur.cursor_next_word_end, *n),
+                    "e": lambda *n: self.cur.change_to(self.cur.cursor_next_word_end, *n),
+                    "b": lambda *n: self.cur.change_to(self.cur.cursor_prev_word, *n),
+                    "g": {
+                        "g": lambda *n: self.cur.change_to(self.cur.cursor_head, *n),
+                    },
+                    "G": lambda *n: self.cur.change_to(self.cur.cursor_tail, *n),
+                    "0": lambda *n: self.cur.change_to(self.cur.cursor_head, *n),
+                    "$": lambda *n: self.cur.change_to(self.cur.cursor_tail, *n),
+                    "^": lambda *n: self.cur.change_to(self.cur.cursor_start, *n),
+                    " ": lambda *n: self.cur.change_to(self.cur.cursor_next_char, *n),
+                    "<bs>": lambda *n: self.cur.change_to(self.cur.cursor_prev_char, *n),
+                    "f": lambda *n: self.cur.change_to(self.cur.cursor_fnxt_char, *n),
+                    "F": lambda *n: self.cur.change_to(self.cur.cursor_fprv_char, *n),
+                    "i": {
+                        "w": lambda *n: self.cur.change_in(self.cur.get_range_cur_word, *n),
+                    },
+                },
+                "y": {
+                    "h": lambda *n: self.cur.yank_to(self.cur.cursor_left, *n),
+                    "l": lambda *n: self.cur.yank_to(self.cur.cursor_right, *n),
+                    "k": lambda *n: self.cur.yank_to(self.cur.cursor_up, *n),
+                    "j": lambda *n: self.cur.yank_to(self.cur.cursor_down, *n),
+                    "<up>": lambda *n: self.cur.yank_to(self.cur.cursor_up, *n),
+                    "<down>": lambda *n: self.cur.yank_to(self.cur.cursor_down, *n),
+                    "<left>": lambda *n: self.cur.yank_to(self.cur.cursor_left, *n),
+                    "<right>": lambda *n: self.cur.yank_to(self.cur.cursor_right, *n),
+                    "<pageup>": lambda *n: self.cur.yank_to(self.cur.cursor_pageup, *n),
+                    "<pagedown>": lambda *n: self.cur.yank_to(self.cur.cursor_pagedown, *n),
+                    "<home>": lambda *n: self.cur.yank_to(self.cur.cursor_home, *n),
+                    "<end>": lambda *n: self.cur.yank_to(self.cur.cursor_end, *n),
+                    "w": lambda *n: self.cur.yank_to(self.cur.cursor_next_word_end, *n),
+                    "e": lambda *n: self.cur.yank_to(self.cur.cursor_next_word_end, *n),
+                    "b": lambda *n: self.cur.yank_to(self.cur.cursor_prev_word, *n),
+                    "g": {
+                        "g": lambda *n: self.cur.yank_to(self.cur.cursor_head, *n),
+                    },
+                    "G": lambda *n: self.cur.yank_to(self.cur.cursor_tail, *n),
+                    "0": lambda *n: self.cur.yank_to(self.cur.cursor_head, *n),
+                    "$": lambda *n: self.cur.yank_to(self.cur.cursor_tail, *n),
+                    "^": lambda *n: self.cur.yank_to(self.cur.cursor_start, *n),
+                    " ": lambda *n: self.cur.yank_to(self.cur.cursor_next_char, *n),
+                    "<bs>": lambda *n: self.cur.yank_to(self.cur.cursor_prev_char, *n),
+                    "f": lambda *n: self.cur.yank_to(self.cur.cursor_fnxt_char, *n),
+                    "F": lambda *n: self.cur.yank_to(self.cur.cursor_fprv_char, *n),
+                    "i": {
+                        "w": lambda *n: self.cur.yank_in(self.cur.get_range_cur_word, *n),
+                    },
+                    "y": lambda *n: self.cur.key_yank_line(*n),
                 },
             },
             "VISUAL": {
@@ -755,6 +965,10 @@ class Editor:
                 "<bs>": lambda *n: self.cur.cursor_prev_char(*n),
                 "f": lambda *n: self.cur.cursor_fnxt_char(*n),
                 "F": lambda *n: self.cur.cursor_fprv_char(*n),
+
+                "i": {
+                    "w": lambda *n: self.cur.select_in(self.cur.get_range_cur_word, *n),
+                },
             },
             "COMMAND": {
                 "<esc>": self.mode_normal,
@@ -1099,6 +1313,30 @@ class Editor:
             self.update_size()
             return ed_getch()
 
+    def read_keyseq(self, source: Callable) -> list[str] | tuple[int, Callable, list[str]]:
+        key = source()
+        nrep = -1
+        if self.mode not in ("COMMAND", "INSERT") and len(key) == 1 and key.isdigit():
+            num = key
+            key = source()
+            while len(key) == 1 and key.isdigit():
+                num += key
+                key = source()
+            nrep = int(num)
+        keys = [key]
+        if key in self.keymap[self.mode]:
+            k = self.keymap[self.mode][key]
+            while isinstance(k, dict):
+                key = source()
+                keys.append(key)
+                if key in k:
+                    k = k[key]
+                else:
+                    break
+            if callable(k):
+                return nrep, k, keys
+        return keys
+
     def mainloop(self):
         self.running = True
         need_cmp = False
@@ -1110,35 +1348,20 @@ class Editor:
                 self.cur.clear_cmp_menu()
             self.draw()
 
-            key = self.async_getch()
             self.message = ""
-            nrep = -1
-            if self.mode not in ("COMMAND", "INSERT") and len(key) == 1 and key.isdigit():
-                num = key
-                key = self.async_getch()
-                while len(key) == 1 and key.isdigit():
-                    num += key
-                    key = self.async_getch()
-                nrep = int(num)
-            if key in self.keymap[self.mode]:
-                key0 = key
-                k = self.keymap[self.mode][key]
-                while isinstance(k, dict):
-                    key = self.async_getch()
-                    if key in k:
-                        k = k[key]
-                    else:
-                        break
+            keyseq = self.read_keyseq(self.async_getch)
+            if isinstance(keyseq, tuple):
+                nrep, k, keys = keyseq
                 if callable(k):
                     if nrep == -1:
                         k()
                     else:
                         k(nrep)
-                    if key0 not in ("<C-n>", "<C-p>", "<tab>", "<bs>"):
+                    if len(keys) == 1 and keys[0] not in ("<C-n>", "<C-p>", "<tab>", "<bs>"):
                         need_cmp = False
-            elif self.mode == "INSERT" and len(key) == 1:
-                self.cur.insert(key)
+            elif self.mode == "INSERT" and len(keyseq) == len(keyseq[0]) == 1:
+                self.cur.insert(keyseq[0])
                 need_cmp = True
-            elif self.mode == "COMMAND" and len(key) == 1:
-                self.cmd_insert(key)
+            elif self.mode == "COMMAND" and len(keyseq) == len(keyseq[0]) == 1:
+                self.cmd_insert(keyseq[0])
                 need_cmp = False
