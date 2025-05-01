@@ -1,7 +1,8 @@
+from typing import Callable
 from renderer import Theme, default_theme
 from renderers.renderers import get_renderer
 from screen import Screen
-from utils import ed_getch, flush, get_file_ext, get_width, gotoxy
+from utils import ed_getch, flush, get_char_type, get_file_ext, get_width, gotoxy
 from drawer import Drawer
 from threading import Thread
 from pyperclip import copy, paste
@@ -183,6 +184,17 @@ class Buffer(Window, BufferBase):
         self.drawer = Drawer(editor.screen, self.text, self.left, self.top,
                              self.h - 1, self.w, editor.theme, True)
 
+        # 2025-4-30
+        # 仅实验性功能，不确定是否长期保留
+        # 但确实好写，所以先写了（
+        self.cmp_menu: list[str] = []
+        self.cmp_func: list[Callable] = []
+        self.cmp_select = -1
+        self.cmp_scroll = 0
+        self.cmp_maxshow = 10
+        self.cmp_maxwidth = 50
+        self.cmp_minwidth = 10
+
     def close(self):
         super().close()
         if self.file:
@@ -316,6 +328,66 @@ class Buffer(Window, BufferBase):
                 self.y = len(self.text) - 1
         self.x = min(len(self.text[self.y]), self.ideal_x)
 
+    def cmp_select_next(self):
+        if self.cmp_select == len(self.cmp_menu) - 1:
+            self.cmp_select = -1
+        else:
+            self.cmp_select += 1
+
+    def cmp_select_prev(self):
+        if self.cmp_select == -1:
+            self.cmp_select = len(self.cmp_menu) - 1
+        else:
+            self.cmp_select -= 1
+
+    def cmp_menu_update(self, menu: list[str], func: list[Callable]):
+        if self.cmp_select == -1 or self.cmp_menu[self.cmp_select] not in menu:
+            self.cmp_select = -1
+        else:
+            self.cmp_select = menu.index(self.cmp_menu[self.cmp_select])
+        self.cmp_func = func
+        self.cmp_menu = menu
+
+    def clear_cmp_menu(self):
+        self.cmp_menu = []
+        self.cmp_func = []
+        self.cmp_select = -1
+
+    def cmp_menu_accept(self):
+        if self.cmp_menu:
+            self.cmp_func[max(0, self.cmp_select)]()
+            self.clear_cmp_menu()
+
+    def fill_cmp_menu(self):
+        menu = []
+        func = []
+        cw_range = self.get_range_last_word()
+        if cw_range:
+            cur_word = self.textinputer.get(*cw_range[0], *cw_range[1])
+            for i in sorted(self.get_all_words()):
+                if i[:len(cur_word)] == cur_word and len(i) > len(cur_word):
+                    menu.append(i)
+                    func.append(self.gen_cmp_func(i))
+        self.cmp_menu_update(menu, func)
+
+    def get_all_words(self):
+        words = set()
+        for ln in self.text:
+            cur = ""
+            for i in ln:
+                tp = get_char_type(i)
+                if tp == 1:
+                    cur += i
+                if tp != 1 and cur:
+                    words.add(cur)
+                    cur = ""
+            if cur:
+                words.add(cur)
+        return words
+
+    def gen_cmp_func(self, text: str):
+        return lambda: self.replace(text, self.get_range_last_word())
+
     def resize(self, h: int, w: int):
         Window.resize(self, h, w)
         self.h, self.w = h, w
@@ -331,10 +403,42 @@ class Buffer(Window, BufferBase):
     def find_buffer(self) -> "Buffer | None":
         return self
 
+    def get_menu_height(self) -> tuple[int, bool]:
+        need_h = min(self.cmp_maxshow, len(self.cmp_menu))
+        real_h = self.cursor_real_pos()[0]
+        if self.editor.h - real_h - 1 < need_h and real_h > self.editor.h - real_h - 1:
+            return min(need_h, real_h), True
+        return min(need_h, self.editor.h - real_h - 1, need_h), False
+
+    def set_menu_scroll(self, menu_h: int):
+        cmp_select = max(self.cmp_select, 0)
+        if self.cmp_select + 1 > self.cmp_scroll + menu_h:
+            self.cmp_scroll = self.cmp_select + 1 - menu_h
+        if self.cmp_select < self.cmp_scroll:
+            self.cmp_scroll = self.cmp_select
+
     def cursor_real_pos(self):
         self.drawer.scroll_buffer(self.y, self.x)
         cursor = self.drawer.draw_cursor(self.y, self.x)
         return cursor[0] + self.top, cursor[1] + self.left
+
+    # 又是可恶的徒手绘图（
+    # 要不然封装一下吧
+    def draw_text(self, top: int, left: int, width: int, text: str, tp: str, prio=0):
+        shw = 0
+        color = self.editor.theme.get(tp, False)
+        for ch in text:
+            cur_width = get_width(ch)
+            if shw + cur_width > width:
+                break
+            self.editor.screen.change(top, left + shw, ch, color, prio)
+            shw += 1
+            for _ in range(1, cur_width):
+                self.editor.screen.change(top, left + shw, " ", color, prio)
+                shw += 1
+        while shw < width:
+            self.editor.screen.change(top, left + shw, " ", color, prio)
+            shw += 1
 
     def draw(self):
         self.drawer.scroll_buffer(self.y, self.x)
@@ -345,9 +449,8 @@ class Buffer(Window, BufferBase):
                 self.drawer.draw(self.renderer, (self.sely, self.selx), (self.y, self.x))
         else:
             self.drawer.draw(self.renderer)
+        cursor_real_pos = self.cursor_real_pos()
         if self.editor.cur == self and self.editor.mode != "COMMAND":
-            cursor = self.drawer.draw_cursor(self.y, self.x)
-            cursor_real_pos = cursor[0] + self.top, cursor[1] + self.left
             self.editor.screen.set_cursor(*cursor_real_pos)
 
         if self.file:
@@ -362,19 +465,29 @@ class Buffer(Window, BufferBase):
             else:
                 file = file[:self.w - 2] + ".."
         modeline = file
-        shw = 0
-        for ch in modeline:
-            self.editor.screen.change(self.top + self.h - 1, self.left + shw, ch,
-                                      self.editor.theme.get("modeline", False))
-            shw += 1
-            for _ in range(1, get_width(ch)):
-                self.editor.screen.change(self.top + self.h - 1, self.left + shw, " ",
-                                          self.editor.theme.get("modeline", False))
-                shw += 1
-        while shw < self.w:
-            self.editor.screen.change(self.top + self.h - 1, self.left + shw, " ",
-                                      self.editor.theme.get("modeline", False))
-            shw += 1
+        self.draw_text(self.top + self.h - 1, self.left, self.w, modeline, "modeline")
+
+        if self.cmp_menu and self.editor.cur == self and self.editor.mode == "INSERT":
+            menu_h, menu_dir = self.get_menu_height()
+            self.set_menu_scroll(menu_h)
+            # 这很省行数了（
+            menu_w = max(self.cmp_minwidth, min(self.cmp_maxwidth,
+                         max(map(lambda x: sum(map(get_width, x)), self.cmp_menu))))
+            if cursor_real_pos[1] + menu_w + 1 > self.editor.w:
+                menu_left = self.editor.w - menu_w
+            else:
+                menu_left = cursor_real_pos[1] + 1
+            if menu_dir:  # 光标之上
+                r = range(cursor_real_pos[0] - menu_h, cursor_real_pos[0])
+                start = cursor_real_pos[0] - menu_h
+            else:         # 光标之下
+                r = range(cursor_real_pos[0] + 1, cursor_real_pos[0] + 1 + menu_h)
+                start = cursor_real_pos[0] + 1
+            for ln in r:
+                self.draw_text(ln, menu_left, menu_w,
+                               self.cmp_menu[ln - start],
+                               "completion" if ln - start != self.cmp_select else 'completion_selected',
+                               1)
 
         # self.editor.debug_points.extend([(self.top, self.left),
         #                                  (self.top + self.h - 1, self.left + self.w - 1)])
@@ -552,9 +665,13 @@ class Editor:
                 "<end>": lambda *n: self.cur.cursor_end(*n),
 
                 "<bs>": lambda *n: self.cur.del_before_cursor(*n),
-                "<tab>": lambda *n: self.cur.insert_tab(*n),
-                "<cr>": lambda *n: self.cur.insert("\n"),
+                "<tab>": self.key_tab,
+                "<cr>": self.key_enter,
                 "<space>": lambda *n: self.cur.insert(" "),
+
+                "<C-n>": lambda *n: self.cur.cmp_select_next(),
+                "<C-p>": lambda *n: self.cur.cmp_select_prev(),
+                "<C-y>": lambda *n: self.cur.cmp_menu_accept(),
             },
             "NORMAL": {
                 "i": self.mode_insert,
@@ -671,7 +788,7 @@ class Editor:
             "so": self.accept_cmd_select_sibling,  # 令我想起Emacs
             "sg": self.accept_cmd_goto_by_id,
             "wh": self.accept_cmd_resize_h,
-            "wv": self.accept_cmd_resize_v,
+            "ww": self.accept_cmd_resize_w,
         }
         self.mode = "NORMAL"
         self.cur_cmd = ""
@@ -724,6 +841,18 @@ class Editor:
             self.cmd_pos -= 1
         elif self.cmd_pos == 1 and self.cur_cmd == ":":
             self.mode_normal()
+
+    def key_enter(self, *_):
+        if self.cur.cmp_menu:
+            self.cur.cmp_menu_accept()
+        else:
+            self.cur.insert("\n")
+
+    def key_tab(self, *_):
+        if self.cur.cmp_menu:
+            self.cur.cmp_select_next()
+        else:
+            self.cur.insert_tab()
 
     def accept_cmd(self, *_):
         self.cur_cmd = self.cur_cmd[1:].strip()
@@ -786,42 +915,42 @@ class Editor:
                 self.cur.resize_bottomup(self.cur.h - int(arg[1:]), self.cur.w)
             else:
                 self.cur.resize(int(arg), self.cur.w)
-        except WinResizeError:
+        except:
             pass
 
-    def accept_cmd_resize_v(self, arg: str):
+    def accept_cmd_resize_w(self, arg: str):
         try:
             if arg[0] == '+':
-                self.cur.resize(self.cur.h, self.cur.w + int(arg[1:]))
+                self.cur.resize_bottomup(self.cur.h, self.cur.w + int(arg[1:]))
             elif arg[0] == '-':
-                self.cur.resize(self.cur.h, self.cur.w - int(arg[1:]))
+                self.cur.resize_bottomup(self.cur.h, self.cur.w - int(arg[1:]))
             else:
-                self.cur.resize(self.cur.h, int(arg))
-        except WinResizeError:
+                self.cur.resize_bottomup(self.cur.h, int(arg))
+        except:
             pass
 
     def key_resize_h_add(self, n=1):
         try:
             self.cur.resize_bottomup(self.cur.h + n, self.cur.w)
-        except WinResizeError:
+        except:
             pass
 
     def key_resize_h_sub(self, n=1):
         try:
             self.cur.resize_bottomup(self.cur.h - n, self.cur.w)
-        except WinResizeError:
+        except:
             pass
 
     def key_resize_v_add(self, n=1):
         try:
             self.cur.resize_bottomup(self.cur.h, self.cur.w + n)
-        except WinResizeError:
+        except:
             pass
 
     def key_resize_v_sub(self, n=1):
         try:
             self.cur.resize_bottomup(self.cur.h, self.cur.w - n)
-        except WinResizeError:
+        except:
             pass
 
     def key_winmove_right(self, *_):
@@ -972,8 +1101,13 @@ class Editor:
 
     def mainloop(self):
         self.running = True
+        need_cmp = False
 
         while self.running:
+            if need_cmp:
+                self.cur.fill_cmp_menu()
+            else:
+                self.cur.clear_cmp_menu()
             self.draw()
 
             key = self.async_getch()
@@ -987,6 +1121,7 @@ class Editor:
                     key = self.async_getch()
                 nrep = int(num)
             if key in self.keymap[self.mode]:
+                key0 = key
                 k = self.keymap[self.mode][key]
                 while isinstance(k, dict):
                     key = self.async_getch()
@@ -999,7 +1134,11 @@ class Editor:
                         k()
                     else:
                         k(nrep)
+                    if key0 not in ("<C-n>", "<C-p>", "<tab>", "<bs>"):
+                        need_cmp = False
             elif self.mode == "INSERT" and len(key) == 1:
                 self.cur.insert(key)
+                need_cmp = True
             elif self.mode == "COMMAND" and len(key) == 1:
                 self.cmd_insert(key)
+                need_cmp = False

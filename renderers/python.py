@@ -1,66 +1,18 @@
 """
-2025-3-25
-暂时正确，可惜不知道还能再正确多久
+暂时使用全文高亮
+反正迟早得换Tree-sitter
+1000行，30KB以内时间可控
+直接用之前写的pyhl
 """
-
 from renderer import Renderer
 import keyword
 
-"""
-带2的是"
-"""
+pyKwSet = set(keyword.kwlist)
+pySoftKwSet = set(keyword.softkwlist)
+pySelfSet = {"self", "cls"}
+pyConstSet = {"True", "False", "None"}
 
-
-class PyLnSt:
-    Unknown = -1
-    Null = 0
-    StrPass = 1
-    Str2Pass = 2
-    StrLong = 3
-    Str2Long = 4
-    # 经典bitmask
-    AfterDef = 0b1000
-    AfterClass = 0b10000
-    AfterFrom = 0b100000
-    AfterDot = 0b1000000
-
-
-class PyTok:
-    Unknown = -1
-    Id = 0
-    Num = 1
-    Const = 2
-    Keyword = 3
-    Str = 4
-    Comment = 5
-    Op = 6
-    Other = 7
-    Class = 8
-    Func = 9
-    Module = 10
-    Field = 11
-    Param = 12
-
-
-pyTokDict = [
-    "id",
-    "num",
-    "const",
-    "kw",
-    "str",
-    "comment",
-    "op",
-    "text",
-    "class",
-    "func",
-    "module",
-    "field",
-    "param",
-]
-
-pyKwSet = set(keyword.kwlist) | set(keyword.softkwlist)
-
-pyOpSet = set("~!%^&*()-+=[{}]|;:,.<>")
+pyOpSet = set("~!%^&*()-+=[{}]|/;:,.<>")
 
 pyFuncSet = {
     "abs",
@@ -110,7 +62,6 @@ pyFuncSet = {
     "sum",
     "vars",
 }
-
 
 pyClassSet = {
     "str",
@@ -206,220 +157,252 @@ pyClassSet = {
     "ResourceWarning",
 }
 
+class PyTok:
+    Unknown = -1
+    Id = 0
+    Num = 1
+    Const = 2
+    Keyword = 3
+    Str = 4
+    Comment = 5
+    Op = 6
+    Other = 7
+    Class = 8
+    Func = 9
+    Module = 10
+    Field = 11
+    Param = 12
+    Escape = 13
+    Error = 14
+
+
+pyTokDict = [
+    "id",
+    "num",
+    "const",
+    "kw",
+    "str",
+    "comment",
+    "op",
+    "text",
+    "class",
+    "func",
+    "module",
+    "field",
+    "param",
+    "escape",
+    "error",
+]
+
+
+def ispynum(s: str):
+    if s[:2] == '00':
+        return False
+    if s[:2] in {'0b', '0o', '0x'}:
+        return all(map(lambda x: x.isdecimal() or x == '.' or ord('A') <= ord(x) <= ord('F') or ord('a') <= ord(x) <= ord('f'), s[2:]))
+    return all(map(lambda x: x.isdigit() or x == '.', s))
+
+
+def render(code: str):
+    def find_after(c='('):
+        p = pos
+        while p < len(code) and (code[p].isspace() or code[p] == '\\'):
+            if code[p] == '\n' and not sum(braclv):
+                return False
+            if code[p] == '\\':
+                if p + 1 < len(code) and code[p + 1] == '\n':
+                    p += 1
+            p += 1
+        return code[p] == c
+
+    pos = 0
+    buf: list[tuple[int, str]] = []
+    braclv = [0, 0, 0]
+    after_th = None
+    after_dot = False
+    after_class = False
+    after_def = False
+    after_import = False
+
+    while pos < len(code):
+        cur_token = ""
+        if code[pos].isspace():
+            while pos < len(code) and code[pos].isspace():
+                cur_token += code[pos]
+                if code[pos] == '\n' and not sum(braclv):
+                    after_th = None
+                    after_class = False
+                    after_def = False
+                    after_import = False
+                pos += 1
+            buf.append((PyTok.Other, cur_token))
+            after_dot = False
+        elif code[pos].isdigit():
+            while pos < len(code) and (code[pos].isalnum() or code[pos] == "."):
+                cur_token += code[pos]
+                pos += 1
+            if ispynum(cur_token):
+                buf.append((PyTok.Num, cur_token))
+            else:
+                buf.append((PyTok.Error, cur_token))
+            after_dot = False
+        elif code[pos].isalpha() or code[pos] == "_":
+            while pos < len(code) and (code[pos].isalnum() or code[pos] == "_"):
+                cur_token += code[pos]
+                pos += 1
+            if cur_token in pyConstSet:
+                tp = PyTok.Const
+            elif cur_token in pyKwSet:
+                tp = PyTok.Keyword
+                if cur_token == "class" and braclv == [0, 0, 0]:
+                    after_class = True
+                elif cur_token == "def" and braclv == [0, 0, 0]:
+                    after_def = True
+                elif cur_token == "from" and braclv == [0, 0, 0]:
+                    after_import = True
+                elif cur_token == "import" and braclv == [0, 0, 0]:
+                    after_import = not after_import
+            elif find_after('=') and braclv[0] > 0:
+                tp = PyTok.Param
+            elif after_import:
+                tp = PyTok.Module
+            elif after_th or after_class:
+                tp = PyTok.Class
+            elif after_def and (find_after('=') or find_after(')')
+                                or find_after(',') or find_after(':')):
+                tp = PyTok.Param
+            elif after_def:
+                tp = PyTok.Func
+            elif after_dot:
+                if find_after():
+                    if ord('A') <= ord(cur_token[0]) <= ord('Z') and '_' not in cur_token:
+                        tp = PyTok.Class
+                    else:
+                        tp = PyTok.Func
+                else:
+                    tp = PyTok.Field
+            elif cur_token in pyClassSet:
+                tp = PyTok.Class
+            elif cur_token in pyFuncSet:
+                tp = PyTok.Func
+            elif find_after():
+                if ord('A') <= ord(cur_token[0]) <= ord('Z') and '_' not in cur_token:
+                    tp = PyTok.Class
+                else:
+                    tp = PyTok.Func
+            elif cur_token in pySelfSet:
+                tp = PyTok.Param
+            elif cur_token in pySoftKwSet:
+                tp = PyTok.Keyword
+            else:
+                tp = PyTok.Id
+            buf.append((tp, cur_token))
+            after_dot = False
+        elif code[pos] in "\"'":
+            qc = code[pos]
+            pos += 1
+            cur_token += qc
+            if pos < len(code) and code[pos] == qc:
+                cur_token += qc
+                pos += 1
+                if pos < len(code) and code[pos] == qc:
+                    cur_token += qc
+                    pos += 1
+                else:
+                    buf.append((PyTok.Str, cur_token))
+                    continue
+            qc = cur_token
+            while pos < len(code) and code[pos: pos + len(qc)] != qc:
+                if code[pos] == "\\":
+                    cur_token += code[pos]
+                    pos += 1
+                if pos < len(code):
+                    cur_token += code[pos]
+                    pos += 1
+            if pos < len(code):
+                cur_token += code[pos: pos + len(qc)]
+                pos += len(qc)
+            buf.append((PyTok.Str, cur_token))
+            after_dot = False
+        elif code[pos] in pyOpSet:
+            while pos < len(code) and code[pos] in pyOpSet:
+                if code[pos] == '(':
+                    braclv[0] += 1
+                elif code[pos] == ')' and braclv[0] > 0:
+                    braclv[0] -= 1
+                elif code[pos] == '[':
+                    braclv[1] += 1
+                elif code[pos] == ']' and braclv[1] > 0:
+                    braclv[1] -= 1
+                elif code[pos] == '{':
+                    braclv[2] += 1
+                elif code[pos] == '}' and braclv[2] > 0:
+                    braclv[2] -= 1
+                cur_token += code[pos]
+                pos += 1
+            buf.append((PyTok.Op, cur_token))
+            if cur_token.endswith("->") and braclv == [0, 0, 0]:
+                after_th = "->"
+            elif cur_token.endswith(":") and braclv in ([0, 0, 0], [1, 0, 0]):
+                after_th = ":"
+            elif cur_token.endswith(":") and braclv in [0, 0, 0]:
+                after_class = after_def = False
+            elif cur_token.endswith(",") and after_th == ":" and braclv == [1, 0, 0]:
+                after_th = None
+            elif cur_token.endswith("=") and after_th == ":" and braclv in ([0, 0, 0], [1, 0, 0]):
+                after_th = None
+            elif cur_token.endswith(":") and after_th == "->" and braclv == [0, 0, 0]:
+                after_th = None
+            if cur_token.endswith(".") or cur_token.endswith("...."):
+                after_dot = True
+            else:
+                after_dot = False
+        elif code[pos] == "#":
+            while pos < len(code) and code[pos] != "\n":
+                cur_token += code[pos]
+                pos += 1
+            buf.append((PyTok.Comment, cur_token))
+            after_dot = False
+        elif code[pos] == '\\':
+            if pos + 1 < len(code) and code[pos + 1] == '\n':
+                pos += 2
+                buf.append((PyTok.Other, '\\\n'))
+            else:
+                buf.append((PyTok.Error, '\\'))
+                pos += 1
+            after_dot = False
+        else:
+            cur_token += code[pos]
+            pos += 1
+            buf.append((PyTok.Error, cur_token))
+
+    return buf
+
 
 class PythonRenderer(Renderer):
-    # 看来我还是喜欢抽象命名（
-    # 三字符想必是最好的，意义明确还好打
-    # 就像use let pub之类（
-    # 2025-2-2 得，现在不这么觉得了
-    #          原来最大的痛苦就是阅读自己几个月前的代码
     def __init__(self, text: list[str]):
-        super().__init__(text)
-        self.sts = [PyLnSt.Unknown for _ in range(len(self.text))]  # States
-        self.buf: list[list[int]] = [[] for _ in range(len(self.text))]
+        self.buf = []
+        self.text = text
 
-    def change(self, ln: int):
-        super().change(ln)
-        self.sts[ln] = PyLnSt.Unknown
+    def change(self, ln: int): ...
 
-    def add(self, begin: int, end: int):
-        super().add(begin, end)
-        self.sts = (
-            self.sts[:begin]
-            + [PyLnSt.Unknown for _ in range(begin, end + 1)]
-            + self.sts[begin:]
-        )
-        self.buf = (
-            self.buf[:begin] + [[] for _ in range(begin, end + 1)] + self.buf[begin:]
-        )
+    def add(self, begin: int, end: int): ...
 
-    def rem(self, begin: int, end: int):
-        super().rem(begin, end)
-        del self.sts[begin : end + 1]
-        del self.buf[begin : end + 1]
+    def rem(self, begin: int, end: int): ...
 
-    def _check_lparen(self, ln: int, x: int) -> bool:
-        while x < len(self.text[ln]) and self.text[ln][x].isspace():
-            x += 1
-        return x < len(self.text[ln]) and self.text[ln][x] == "("
-
-    def render_line(self, ln: int):
-        if ln > 0:
-            st = self.sts[ln - 1]
-        else:
-            st = 0
-        assert st != PyLnSt.Unknown
-        self.buf[ln] = []
-        s = self.text[ln]
-        res = self.buf[ln]
-        x = 0
-
-        if PyLnSt.StrPass <= st <= PyLnSt.Str2Long:
-            q = '"' if st in (PyLnSt.Str2Long, PyLnSt.Str2Pass) else "'"
-            qcnt = 3 if st in (PyLnSt.StrLong, PyLnSt.Str2Long) else 1
-            while x < len(s) and not (s[x: x+qcnt] == q * qcnt):
-                if s[x] == "\\":
-                    x += 1
-                    res.append(PyTok.Str)
-                    if x == len(s):
-                        # 抽象的艺术
-                        return (
-                            (PyLnSt.StrLong if q == "'" else PyLnSt.Str2Long)
-                            if qcnt == 3
-                            else (PyLnSt.StrPass if q == "'" else PyLnSt.Str2Pass)
-                        )
-                    x += 1
-                    res.append(PyTok.Str)
-                else:
-                    x += 1
-                    res.append(PyTok.Str)
-            if x >= len(s) and qcnt == 3:
-                return PyLnSt.StrLong if q == "'" else PyLnSt.Str2Long
-            if x < len(s):
-                for _ in range(qcnt):
-                    x += 1
-                    res.append(PyTok.Str)
-            st = 0
-
-        # 词进式，每次一个单词
-        while x < len(s):
-
-            if s[x].isalnum() or s[x] == "_":
-                q = ""
-                while x < len(s) and (s[x].isalnum() or s[x] == "_"):
-                    q += s[x]
-                    x += 1
-                if q in {"self", "cls"}:
-                    idtp = PyTok.Param
-                elif q in {"True", "False", "None"}:
-                    idtp = PyTok.Const
-                elif q in pyKwSet:
-                    idtp = PyTok.Keyword
-                    if q == "def":
-                        st |= PyLnSt.AfterDef
-                    elif q == "class":
-                        st |= PyLnSt.AfterClass
-                    elif q == "from":
-                        st |= PyLnSt.AfterFrom
-                    elif q == "import":
-                        if st & PyLnSt.AfterFrom:
-                            st &= ~PyLnSt.AfterFrom
-                        else:
-                            st |= PyLnSt.AfterFrom
-                elif q.isdecimal():
-                    idtp = PyTok.Num
-                elif st:
-                    if st & PyLnSt.AfterDef:
-                        idtp = PyTok.Func
-                        st = 0
-                    elif st & PyLnSt.AfterClass:
-                        idtp = PyTok.Class
-                        st = 0
-                    elif st & PyLnSt.AfterFrom:
-                        idtp = PyTok.Module
-                    elif st & PyLnSt.AfterDot:
-                        idtp = PyTok.Field
-                    else:
-                        assert False
-                    if self._check_lparen(ln, x):
-                        if ord('A') <= ord(q[0]) <= ord('Z'):
-                            idtp = PyTok.Class
-                        else:
-                            idtp = PyTok.Func
-                elif q in pyClassSet:
-                    idtp = PyTok.Class
-                elif q in pyFuncSet:
-                    idtp = PyTok.Func
-                else:
-                    idtp = PyTok.Id
-                    if self._check_lparen(ln, x):
-                        if ord('A') <= ord(q[0]) <= ord('Z'):
-                            idtp = PyTok.Class
-                        else:
-                            idtp = PyTok.Func
-                for _ in q:
-                    res.append(idtp)
-                st &= ~PyLnSt.AfterDot
-
-            elif s[x] in "\"'":
-                q = s[x]
-                qcnt = 0
-                while x < len(s) and qcnt < 3 and s[x] == q:
-                    qcnt += 1
-                    x += 1
-                    res.append(PyTok.Str)
-                if qcnt == 2:
-                    continue
-                while x < len(s) and not (s[x: x+qcnt] == q * qcnt):
-                    if s[x] == "\\":
-                        x += 1
-                        res.append(PyTok.Str)
-                        if x == len(s):
-                            # 抽象的艺术
-                            return (
-                                (PyLnSt.StrLong if q == "'" else PyLnSt.Str2Long)
-                                if qcnt == 3
-                                else (PyLnSt.StrPass if q == "'" else PyLnSt.Str2Pass)
-                            )
-                        x += 1
-                        res.append(PyTok.Str)
-                    else:
-                        x += 1
-                        res.append(PyTok.Str)
-                if x >= len(s) and qcnt == 3:
-                    return PyLnSt.StrLong if q == "'" else PyLnSt.Str2Long
-                if x < len(s):
-                    for _ in range(qcnt):
-                        x += 1
-                        res.append(PyTok.Str)
-                if not (st & PyLnSt.AfterFrom):
-                    st = 0
-                st &= ~PyLnSt.AfterDot
-
-            elif s[x] in pyOpSet:
-                if s[x] == ".":
-                    st |= PyLnSt.AfterDot
-                else:
-                    if not (st & PyLnSt.AfterFrom):
-                        st = 0
-                    st &= ~PyLnSt.AfterDot
-                x += 1
-                res.append(PyTok.Op)
-            elif s[x] == "#":
-                while x < len(s):
-                    x += 1
-                    res.append(PyTok.Comment)
-                return 0
-            else:
-                x += 1
-                res.append(PyTok.Other)
-        return 0
-
-    def set_ukb(self):
-        old_ukb = self.ukb
-        self.ukb = 0
-        while self.ukb < len(self.text) and (self.sts[self.ukb] != PyLnSt.Unknown
-                                             or self.chs[self.ukb]):
-            self.ukb += 1
-        self.ukb = min(self.ukb, old_ukb)
+    def set_ukb(self): ...
 
     def render(self, target: int):
-        # assert target < len(self.text)
-        target = min(target, len(self.text) - 1)
-        while target >= self.ukb and self.ukb < len(self.text):
-            old_st = self.sts[self.ukb]
-            self.sts[self.ukb] = self.render_line(self.ukb)
-            self.chs[self.ukb] = False
-            # 上一行尾状态不变且本行未改变
-            while (
-                self.sts[self.ukb] == old_st
-                and not self.chs[self.ukb]
-                and self.ukb < len(self.text) - 1
-            ):
-                old_st = self.sts[self.ukb]
-                self.ukb += 1
-            self.ukb += 1
+        self.buf = [[]]
+        for tp, val in render('\n'.join(self.text)):
+            if '\n' in val:
+                for i in val:
+                    if i == '\n':
+                        self.buf.append([])
+                    else:
+                        self.buf[-1].append(tp)
+            else:
+                self.buf[-1].extend([tp] * len(val))
 
     def get(self, y: int, x: int) -> str:
-        assert y < len(self.text)
         return pyTokDict[self.buf[y][x]]

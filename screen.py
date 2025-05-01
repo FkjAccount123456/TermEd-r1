@@ -16,14 +16,18 @@ class Screen:
         self.h, self.w = h, w
         self.data = [[" " for i in range(w)] for j in range(h)]
         self.color = [["" for i in range(w)] for j in range(h)]
+        self.prio = [[0 for i in range(w)] for j in range(h)]
 
-    def change(self, y: int, x: int, ch: str, color: str):
+    def change(self, y: int, x: int, ch: str, color: str, prio=0):
+        if prio < self.prio[y][x]:
+            return
         if y < 0 or x < 0 or y >= self.h or x >= self.w:
             return
         if self.data[y][x] != ch or self.color[y][x] != color:
             self.changed.add((y, x))
             self.data[y][x] = ch
             self.color[y][x] = color
+        self.prio[y][x] = prio
 
     def fill(self, ch: str, color: str):
         for y in range(self.h):
@@ -70,3 +74,5 @@ class Screen:
 
         gotoxy(self.y + 1, self.x + 1)
         print("\033[0m\033[?25h", end="")
+
+        self.prio = [[0 for i in range(self.w)] for j in range(self.h)]

@@ -191,3 +191,11 @@ def trans_getch(ch: str):
 
 def ed_getch():
     return trans_getch(getch())
+
+
+def get_char_type(ch: str) -> int:
+    if ch.isspace():
+        return 0
+    if ch.isalnum() or ch == '_':
+        return 1
+    return 2

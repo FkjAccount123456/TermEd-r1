@@ -2,6 +2,8 @@ from textinputer import TextInputer
 from renderers.renderers import get_renderer
 from msvcrt import getwch as getch
 
+from utils import get_char_type
+
 
 class BufferBase:
     def __init__(self):
@@ -108,42 +110,30 @@ class BufferBase:
 
     def cursor_next_word(self, n: int = 1):
         for _ in range(n):
-            if self.x == len(self.text[self.y]):
-                if self.y < len(self.text) - 1:
-                    self.y += 1
-                    self.x = 0
-            elif self.text[self.y][self.x].isalnum() or self.text[self.y][self.x] == '_':
-                while self.x < len(self.text[self.y]) and \
-                        (self.text[self.y][self.x].isalnum() or
-                         self.text[self.y][self.x] == '_'):
-                    self.x += 1
-            elif self.text[self.y][self.x].isspace():
-                while self.x < len(self.text[self.y]) and self.text[self.y][self.x].isspace():
-                    self.x += 1
-            else:
-                while self.x < len(self.text[self.y]) and \
-                        not (self.text[self.y][self.x].isalnum() or
-                             self.text[self.y][self.x].isspace()):
-                    self.x += 1
+            if self.y >= len(self.text) - 1 and self.x >= len(self.text[self.y]) - 1:
+                break
+            if self.x >= len(self.text[self.y]):
+                self.y += 1
+                self.x = 0
+                continue
+            cur_tp = get_char_type(self.text[self.y][self.x])
+            self.x += 1
+            while self.x < len(self.text[self.y]) and get_char_type(self.text[self.y][self.x]) == cur_tp:
+                self.x += 1
         self.ideal_x = self.x
 
     def cursor_prev_word(self, n: int = 1):
         for _ in range(n):
+            if self.x == self.y == 0:
+                break
             if self.x == 0:
-                if self.y > 0:
-                    self.y -= 1
-                    self.x = len(self.text[self.y])
-            elif self.text[self.y][self.x - 1].isalnum() or self.text[self.y][self.x - 1] == '_':
-                while self.x > 0 and (self.text[self.y][self.x - 1].isalnum() or
-                                      self.text[self.y][self.x - 1] == '_'):
-                    self.x -= 1
-            elif self.text[self.y][self.x - 1].isspace():
-                while self.x > 0 and self.text[self.y][self.x - 1].isspace():
-                    self.x -= 1
-            else:
-                while self.x > 0 and not (self.text[self.y][self.x - 1].isalnum() or
-                                          self.text[self.y][self.x - 1].isspace()):
-                    self.x -= 1
+                self.y -= 1
+                self.x = len(self.text[self.y])
+                continue
+            cur_tp = get_char_type(self.text[self.y][self.x - 1])
+            self.x -= 1
+            while self.x > 0 and get_char_type(self.text[self.y][self.x - 1]) == cur_tp:
+                self.x -= 1
         self.ideal_x = self.x
 
     def cursor_next_char(self, n: int = 1):
@@ -201,3 +191,37 @@ class BufferBase:
             self.cursor_prev_char()
             while self.at_cursor() != ch and not (self.y == self.x == 0):
                 self.cursor_prev_char()
+
+    def get_range_cur_word(self) -> None | tuple[tuple[int, int], tuple[int, int]]:  # 闭区间
+        y, x = self.y, self.x
+        if len(self.text[self.y]) == 0:
+            return None
+        if x >= len(self.text[y]):
+            x = len(self.text[y]) - 1
+        cur_tp = get_char_type(self.text[y][x])
+        x0 = x
+        while x0 > 0 and get_char_type(self.text[y][x0 - 1]) == cur_tp:
+            x0 -= 1
+        x1 = x
+        while x1 < len(self.text[y]) - 1 and get_char_type(self.text[y][x1 + 1]) == cur_tp:
+            x1 += 1
+        return (y, x0), (y, x1)
+
+    def get_range_last_word(self) -> None | tuple[tuple[int, int], tuple[int, int]]:
+        y, x = self.y, self.x
+        if len(self.text[self.y]) == 0 or self.x == 0:
+            return None
+        x -= 1
+        cur_tp = get_char_type(self.text[y][x])
+        x0 = x
+        while x0 > 0 and get_char_type(self.text[y][x0 - 1]) == cur_tp:
+            x0 -= 1
+        return (y, x0), (y, x)
+
+    def replace(self, text: str, r: None | tuple[tuple[int, int], tuple[int, int]]):
+        if r:
+            self.textinputer.delete(*r[0], *r[1])
+            self.y, self.x = self.textinputer.insert(*r[0], text)
+        else:
+            self.y, self.x = self.textinputer.insert(self.y, self.x, text)
+        self.ideal_x = self.x
