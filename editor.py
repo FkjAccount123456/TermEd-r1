@@ -9,7 +9,6 @@ from pyperclip import copy, paste
 from buffer import BufferBase
 from ederrors import *
 import os
-import utils
 
 
 def get_terminal_size():
@@ -513,10 +512,10 @@ class Buffer(Window, BufferBase):
 
     def set_menu_scroll(self, menu_h: int):
         cmp_select = max(self.cmp_select, 0)
-        if self.cmp_select + 1 > self.cmp_scroll + menu_h:
-            self.cmp_scroll = self.cmp_select + 1 - menu_h
-        if self.cmp_select < self.cmp_scroll:
-            self.cmp_scroll = self.cmp_select
+        if cmp_select + 1 > self.cmp_scroll + menu_h:
+            self.cmp_scroll = cmp_select + 1 - menu_h
+        if cmp_select < self.cmp_scroll:
+            self.cmp_scroll = cmp_select
 
     def cursor_real_pos(self):
         self.drawer.scroll_buffer(self.y, self.x)
@@ -535,7 +534,7 @@ class Buffer(Window, BufferBase):
             self.editor.screen.change(top, left + shw, ch, color, prio)
             shw += 1
             for _ in range(1, cur_width):
-                self.editor.screen.change(top, left + shw, " ", color, prio)
+                self.editor.screen.change(top, left + shw, "", color, prio)
                 shw += 1
         while shw < width:
             self.editor.screen.change(top, left + shw, " ", color, prio)

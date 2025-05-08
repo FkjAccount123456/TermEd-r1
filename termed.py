@@ -2,6 +2,7 @@ import editor
 from os import get_terminal_size
 from utils import clear
 import sys
+from renderers.renderers import finalize
 
 if sys.platform == "win32":
     import ctypes
@@ -15,3 +16,5 @@ if len(sys.argv) > 1:
 editor.mainloop()
 
 clear()
+
+finalize()

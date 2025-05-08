@@ -12,3 +12,6 @@ test.py
 *.temp
 .mypy_cache/
 .vscode/
+main-temp.py
+*.so
+*.exe

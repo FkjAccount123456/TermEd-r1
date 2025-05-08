@@ -5,7 +5,9 @@
 直接用之前写的pyhl
 """
 from renderer import Renderer
+import ctypes
 import keyword
+import os
 
 pyKwSet = set(keyword.kwlist)
 pySoftKwSet = set(keyword.softkwlist)
@@ -345,7 +347,7 @@ def render(code: str):
                 after_th = "->"
             elif cur_token.endswith(":") and braclv in ([0, 0, 0], [1, 0, 0]):
                 after_th = ":"
-            elif cur_token.endswith(":") and braclv in [0, 0, 0]:
+            elif cur_token.endswith(":") and braclv == [0, 0, 0]:
                 after_class = after_def = False
             elif cur_token.endswith(",") and after_th == ":" and braclv == [1, 0, 0]:
                 after_th = None
@@ -379,9 +381,32 @@ def render(code: str):
     return buf
 
 
+libpyhl = ctypes.cdll.LoadLibrary(os.path.dirname(__file__) + "\\libpyhl.so")
+
+
+class PyTokList(ctypes.Structure):
+    _fields_ = [
+        ("len", ctypes.c_size_t),
+        ("cap", ctypes.c_size_t),
+        ("data", ctypes.POINTER(ctypes.c_char)),
+    ]
+
+
+class PyHLRes(ctypes.Structure):
+    _fields_ = [
+        ("len", ctypes.c_size_t),
+        ("cap", ctypes.c_size_t),
+        ("data", ctypes.POINTER(PyTokList)),
+    ]
+
+
+libpyhl.render.restype = PyHLRes
+libpyhl.render.argtypes = [ctypes.c_wchar_p, ctypes.c_size_t]
+
+
 class PythonRenderer(Renderer):
     def __init__(self, text: list[str]):
-        self.buf = []
+        self.buf = None
         self.text = text
 
     def change(self, ln: int): ...
@@ -392,17 +417,60 @@ class PythonRenderer(Renderer):
 
     def set_ukb(self): ...
 
+    # def render(self, target: int):
+    #     import time
+    #     import utils
+    #     t = time.time()
+    #     res = render('\n'.join(self.text))
+    #     utils.gotoxy(47, 1)
+    #     print(f"render time: {time.time() - t:.3f}s", end="")
+    #     self.buf = [[]]
+    #     for tp, val in res:
+    #         if '\n' in val:
+    #             for i in val:
+    #                 if i == '\n':
+    #                     self.buf.append([])
+    #                 else:
+    #                     self.buf[-1].append(tp)
+    #         else:
+    #             self.buf[-1].extend([tp] * len(val))
+
+    # def get(self, y: int, x: int) -> str:
+    #     return pyTokDict[self.buf[y][x]]
+
     def render(self, target: int):
-        self.buf = [[]]
-        for tp, val in render('\n'.join(self.text)):
-            if '\n' in val:
-                for i in val:
-                    if i == '\n':
-                        self.buf.append([])
-                    else:
-                        self.buf[-1].append(tp)
-            else:
-                self.buf[-1].extend([tp] * len(val))
+        if self.buf is not None:
+            libpyhl.PyHLRes_free(self.buf)
+        # import time
+        # import utils
+        # t = time.time()
+        text = '\n'.join(self.text)
+        self.buf = libpyhl.render(text, len(text))
+        # utils.gotoxy(47, 1)
+        # print(f"render time: {time.time() - t:.3f}s", end="")
+        # for i, ch in enumerate(text):
+        #     if ch == '\n':
+        #         self.buf.append("")
+        #     else:
+        #         self.buf[-1] += chr(ord(pyhl_res.data[i]))
 
     def get(self, y: int, x: int) -> str:
-        return pyTokDict[self.buf[y][x]]
+        assert self.buf is not None
+        # print(ord(self.buf.data[y].data[x]), y, x, end=' ')
+        # print(pyTokDict[ord(self.buf.data[y].data[x])])
+        return pyTokDict[ord(self.buf.data[y].data[x])]
+    
+    def __del__(self):
+        libpyhl.PyHLRes_free(self.buf)
+
+
+libpyhl.init()
+
+# for i in ["pyKwSet", "pySoftKwSet", "pySelfSet", "pyConstSet",
+#           "pyOpSet", "pyFuncSet", "pyClassSet"]:
+#     exec(f"""print("// {i}")
+# for j in {i}:
+#     print('TABLE_INS({i}, L"' + j +'", true);')""")
+
+def finalize():
+    libpyhl.finalize()

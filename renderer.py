@@ -1,5 +1,3 @@
-from colorama import Fore, Back, Style
-
 from utils import colorcvt, cvt_truecolor
 
 
