@@ -120,6 +120,9 @@ class Drawer:
         return i
 
     def scroll_buffer(self, y: int, x: int):
+        ys, _ = self.get_line_hw(self.text[self.scry])
+        if self.scrys >= ys:
+            self.scrys = ys - 1
         ys, x = self.get_line_hw(self.text[y], range(x))
         if x < self.w:
             ys -= 1
@@ -165,11 +168,11 @@ class Drawer:
                         insel = False
                     color = self.theme.get(render.get(cy, i), insel)
                     self.screen.change(self.top + scrcnt, self.left + cursh,
-                                       (ch := self.text[cy][i]), color)
+                                    (ch := self.text[cy][i]), color)
                     cursh += 1
                     for _ in range(get_width(ch) - 1):
                         self.screen.change(self.top + scrcnt, self.left + cursh,
-                                           "", color)
+                                        "", color)
                         cursh += 1
 
             if i is not None:

@@ -194,6 +194,208 @@ class Buffer(Window, BufferBase):
         self.cmp_maxwidth = 50
         self.cmp_minwidth = 10
 
+        self.keymap = {
+            "INSERT": {
+                "<up>": self.cursor_up,
+                "<down>": self.cursor_down,
+                "<left>": self.cursor_left,
+                "<right>": self.cursor_right,
+                "<pageup>": self.cursor_pageup,
+                "<pagedown>": self.cursor_pagedown,
+                "<home>": self.cursor_home,
+                "<end>": self.cursor_end,
+
+                "<bs>": self.del_before_cursor,
+                "<tab>": self.key_tab,
+                "<cr>": self.key_enter,
+                "<space>": lambda *_: self.insert(" "),
+
+                "<C-n>": self.cmp_select_next,
+                "<C-p>": self.cmp_select_prev,
+                "<C-y>": self.cmp_menu_accept,
+            },
+            "NORMAL": {
+                "a": self.key_normal_a,
+                "A": self.key_normal_A,
+                "I": self.key_normal_I,
+                "o": self.key_normal_o,
+                "O": self.key_normal_O,
+                "s": self.key_normal_s,
+                "S": self.key_normal_S,
+
+                "x": self.key_normal_x,
+                "D": self.key_normal_D,
+                "C": self.key_normal_C,
+
+                "P": self.paste_before_cursor,
+                "p": self.paste_after_cursor,
+                "u": self.undo,
+                "<C-r>": self.redo,
+
+                "h": self.cursor_left,
+                "j": self.cursor_down,
+                "k": self.cursor_up,
+                "l": self.cursor_right,
+                "<up>": self.cursor_up,
+                "<down>": self.cursor_down,
+                "<left>": self.cursor_left,
+                "<right>": self.cursor_right,
+                "<pageup>": self.cursor_pageup,
+                "<pagedown>": self.cursor_pagedown,
+                "<home>": self.cursor_home,
+                "<end>": self.cursor_end,
+                "0": self.cursor_home,
+                "$": self.cursor_end,
+                "^": self.cursor_start,
+                "g": {
+                    "g": self.cursor_head,
+                },
+                "G": self.cursor_tail,
+                "w": self.cursor_next_word,
+                "e": self.cursor_next_word_end,
+                "b": self.cursor_prev_word,
+                "<space>": self.cursor_next_char,
+                "<bs>": self.cursor_prev_char,
+                "f": self.cursor_fnxt_char,
+                "F": self.cursor_fprv_char,
+
+                "d": {
+                    "h": lambda *n: self.delete_to(self.cursor_left, *n),
+                    "l": lambda *n: self.delete_to(self.cursor_right, *n),
+                    "k": lambda *n: self.delete_to(self.cursor_up, *n),
+                    "j": lambda *n: self.delete_to(self.cursor_down, *n),
+                    "<up>": lambda *n: self.delete_to(self.cursor_up, *n),
+                    "<down>": lambda *n: self.delete_to(self.cursor_down, *n),
+                    "<left>": lambda *n: self.delete_to(self.cursor_left, *n),
+                    "<right>": lambda *n: self.delete_to(self.cursor_right, *n),
+                    "<pageup>": lambda *n: self.delete_to(self.cursor_pageup, *n),
+                    "<pagedown>": lambda *n: self.delete_to(self.cursor_pagedown, *n),
+                    "<home>": lambda *n: self.delete_to(self.cursor_home, *n),
+                    "<end>": lambda *n: self.delete_to(self.cursor_end, *n),
+                    "w": lambda *n: self.delete_to(self.cursor_next_word_end, *n),
+                    "e": lambda *n: self.delete_to(self.cursor_next_word_end, *n),
+                    "b": lambda *n: self.delete_to(self.cursor_prev_word, *n),
+                    "g": {
+                        "g": lambda *n: self.delete_to(self.cursor_head, *n),
+                    },
+                    "G": lambda *n: self.delete_to(self.cursor_tail, *n),
+                    "0": lambda *n: self.delete_to(self.cursor_head, *n),
+                    "$": lambda *n: self.delete_to(self.cursor_tail, *n),
+                    "^": lambda *n: self.delete_to(self.cursor_start, *n),
+                    " ": lambda *n: self.delete_to(self.cursor_next_char, *n),
+                    "<bs>": lambda *n: self.delete_to(self.cursor_prev_char, *n),
+                    "f": lambda *n: self.delete_to(self.cursor_fnxt_char, *n),
+                    "F": lambda *n: self.delete_to(self.cursor_fprv_char, *n),
+                    "i": {
+                        "w": lambda *n: self.delete_in(self.get_range_cur_word, *n),
+                    },
+                    "d": lambda *n: self.key_del_line(*n),
+                },
+                "c": {
+                    "h": lambda *n: self.change_to(self.cursor_left, *n),
+                    "l": lambda *n: self.change_to(self.cursor_right, *n),
+                    "k": lambda *n: self.change_to(self.cursor_up, *n),
+                    "j": lambda *n: self.change_to(self.cursor_down, *n),
+                    "<up>": lambda *n: self.change_to(self.cursor_up, *n),
+                    "<down>": lambda *n: self.change_to(self.cursor_down, *n),
+                    "<left>": lambda *n: self.change_to(self.cursor_left, *n),
+                    "<right>": lambda *n: self.change_to(self.cursor_right, *n),
+                    "<pageup>": lambda *n: self.change_to(self.cursor_pageup, *n),
+                    "<pagedown>": lambda *n: self.change_to(self.cursor_pagedown, *n),
+                    "<home>": lambda *n: self.change_to(self.cursor_home, *n),
+                    "<end>": lambda *n: self.change_to(self.cursor_end, *n),
+                    "w": lambda *n: self.change_to(self.cursor_next_word_end, *n),
+                    "e": lambda *n: self.change_to(self.cursor_next_word_end, *n),
+                    "b": lambda *n: self.change_to(self.cursor_prev_word, *n),
+                    "g": {
+                        "g": lambda *n: self.change_to(self.cursor_head, *n),
+                    },
+                    "G": lambda *n: self.change_to(self.cursor_tail, *n),
+                    "0": lambda *n: self.change_to(self.cursor_head, *n),
+                    "$": lambda *n: self.change_to(self.cursor_tail, *n),
+                    "^": lambda *n: self.change_to(self.cursor_start, *n),
+                    " ": lambda *n: self.change_to(self.cursor_next_char, *n),
+                    "<bs>": lambda *n: self.change_to(self.cursor_prev_char, *n),
+                    "f": lambda *n: self.change_to(self.cursor_fnxt_char, *n),
+                    "F": lambda *n: self.change_to(self.cursor_fprv_char, *n),
+                    "i": {
+                        "w": lambda *n: self.change_in(self.get_range_cur_word, *n),
+                    },
+                },
+                "y": {
+                    "h": lambda *n: self.yank_to(self.cursor_left, *n),
+                    "l": lambda *n: self.yank_to(self.cursor_right, *n),
+                    "k": lambda *n: self.yank_to(self.cursor_up, *n),
+                    "j": lambda *n: self.yank_to(self.cursor_down, *n),
+                    "<up>": lambda *n: self.yank_to(self.cursor_up, *n),
+                    "<down>": lambda *n: self.yank_to(self.cursor_down, *n),
+                    "<left>": lambda *n: self.yank_to(self.cursor_left, *n),
+                    "<right>": lambda *n: self.yank_to(self.cursor_right, *n),
+                    "<pageup>": lambda *n: self.yank_to(self.cursor_pageup, *n),
+                    "<pagedown>": lambda *n: self.yank_to(self.cursor_pagedown, *n),
+                    "<home>": lambda *n: self.yank_to(self.cursor_home, *n),
+                    "<end>": lambda *n: self.yank_to(self.cursor_end, *n),
+                    "w": lambda *n: self.yank_to(self.cursor_next_word_end, *n),
+                    "e": lambda *n: self.yank_to(self.cursor_next_word_end, *n),
+                    "b": lambda *n: self.yank_to(self.cursor_prev_word, *n),
+                    "g": {
+                        "g": lambda *n: self.yank_to(self.cursor_head, *n),
+                    },
+                    "G": lambda *n: self.yank_to(self.cursor_tail, *n),
+                    "0": lambda *n: self.yank_to(self.cursor_head, *n),
+                    "$": lambda *n: self.yank_to(self.cursor_tail, *n),
+                    "^": lambda *n: self.yank_to(self.cursor_start, *n),
+                    " ": lambda *n: self.yank_to(self.cursor_next_char, *n),
+                    "<bs>": lambda *n: self.yank_to(self.cursor_prev_char, *n),
+                    "f": lambda *n: self.yank_to(self.cursor_fnxt_char, *n),
+                    "F": lambda *n: self.yank_to(self.cursor_fprv_char, *n),
+                    "i": {
+                        "w": lambda *n: self.yank_in(self.get_range_cur_word, *n),
+                    },
+                    "y": lambda *n: self.key_yank_line(*n),
+                },
+            },
+            "VISUAL": {
+                "y": self.select_yank,
+                "c": self.select_cut,
+                "d": self.select_del,
+                "x": self.select_del,
+                "s": self.select_del,
+
+                "h": self.cursor_left,
+                "j": self.cursor_down,
+                "k": self.cursor_up,
+                "l": self.cursor_right,
+                "<up>": self.cursor_up,
+                "<down>": self.cursor_down,
+                "<left>": self.cursor_left,
+                "<right>": self.cursor_right,
+                "<pageup>": self.cursor_pageup,
+                "<pagedown>": self.cursor_pagedown,
+                "<home>": self.cursor_home,
+                "<end>": self.cursor_end,
+                "0": self.cursor_home,
+                "$": self.cursor_end,
+                "^": self.cursor_start,
+                "g": {
+                    "g": self.cursor_head,
+                },
+                "G": self.cursor_tail,
+                "w": self.cursor_next_word,
+                "b": self.cursor_prev_word,
+                "<space>": self.cursor_next_char,
+                "<bs>": self.cursor_prev_char,
+                "f": self.cursor_fnxt_char,
+                "F": self.cursor_fprv_char,
+
+                "i": {
+                    "w": lambda *n: self.select_in(self.get_range_cur_word, *n),
+                },
+            },
+            "COMMAND": {
+            },
+        }
+
     def close(self):
         super().close()
         if self.file:
@@ -276,6 +478,18 @@ class Buffer(Window, BufferBase):
                     self.editor.fb_maps[os.path.abspath(old_file)].pop()
                 if self.file is not None:
                     self.editor.fb_maps[os.path.abspath(self.file)].add(self)
+
+    def key_enter(self, *_):
+        if self.cmp_menu:
+            self.cmp_menu_accept()
+        else:
+            self.insert("\n")
+
+    def key_tab(self, *_):
+        if self.cmp_menu:
+            self.cmp_select_next()
+        else:
+            self.insert_tab()
 
     def insert_tab(self, *_):
         self.y, self.x = self.textinputer.insert(self.y, self.x,
@@ -754,73 +968,12 @@ class Editor:
         self.keymap = {
             "INSERT": {
                 "<esc>": self.mode_normal,
-
-                "<up>": lambda *n: self.cur.cursor_up(*n),
-                "<down>": lambda *n: self.cur.cursor_down(*n),
-                "<left>": lambda *n: self.cur.cursor_left(*n),
-                "<right>": lambda *n: self.cur.cursor_right(*n),
-                "<pageup>": lambda *n: self.cur.cursor_pageup(*n),
-                "<pagedown>": lambda *n: self.cur.cursor_pagedown(*n),
-                "<home>": lambda *n: self.cur.cursor_home(*n),
-                "<end>": lambda *n: self.cur.cursor_end(*n),
-
-                "<bs>": lambda *n: self.cur.del_before_cursor(*n),
-                "<tab>": self.key_tab,
-                "<cr>": self.key_enter,
-                "<space>": lambda *n: self.cur.insert(" "),
-
-                "<C-n>": lambda *n: self.cur.cmp_select_next(),
-                "<C-p>": lambda *n: self.cur.cmp_select_prev(),
-                "<C-y>": lambda *n: self.cur.cmp_menu_accept(),
             },
             "NORMAL": {
                 "i": self.mode_insert,
-                "a": lambda *n: self.cur.key_normal_a(*n),
-                "A": lambda *n: self.cur.key_normal_A(*n),
-                "I": lambda *n: self.cur.key_normal_I(*n),
-                "o": lambda *n: self.cur.key_normal_o(*n),
-                "O": lambda *n: self.cur.key_normal_O(*n),
-                "s": lambda *n: self.cur.key_normal_s(*n),
-                "S": lambda *n: self.cur.key_normal_S(*n),
-
-                "x": lambda *n: self.cur.key_normal_x(*n),
-                "D": lambda *n: self.cur.key_normal_D(*n),
-                "C": lambda *n: self.cur.key_normal_C(*n),
 
                 "v": self.mode_select,
                 ":": lambda *_: self.mode_command(":"),
-
-                "P": lambda *n: self.cur.paste_before_cursor(*n),
-                "p": lambda *n: self.cur.paste_after_cursor(*n),
-                "u": lambda *n: self.cur.undo(*n),
-                "<C-r>": lambda *n: self.cur.redo(*n),
-
-                "h": lambda *n: self.cur.cursor_left(*n),
-                "j": lambda *n: self.cur.cursor_down(*n),
-                "k": lambda *n: self.cur.cursor_up(*n),
-                "l": lambda *n: self.cur.cursor_right(*n),
-                "<up>": lambda *n: self.cur.cursor_up(*n),
-                "<down>": lambda *n: self.cur.cursor_down(*n),
-                "<left>": lambda *n: self.cur.cursor_left(*n),
-                "<right>": lambda *n: self.cur.cursor_right(*n),
-                "<pageup>": lambda *n: self.cur.cursor_pageup(*n),
-                "<pagedown>": lambda *n: self.cur.cursor_pagedown(*n),
-                "<home>": lambda *n: self.cur.cursor_home(*n),
-                "<end>": lambda *n: self.cur.cursor_end(*n),
-                "0": lambda *n: self.cur.cursor_home(*n),
-                "$": lambda *n: self.cur.cursor_end(*n),
-                "^": lambda *n: self.cur.cursor_start(*n),
-                "g": {
-                    "g": lambda *n: self.cur.cursor_head(*n),
-                },
-                "G": lambda *n: self.cur.cursor_tail(*n),
-                "w": lambda *n: self.cur.cursor_next_word(*n),
-                "e": lambda *n: self.cur.cursor_next_word_end(*n),
-                "b": lambda *n: self.cur.cursor_prev_word(*n),
-                "<space>": lambda *n: self.cur.cursor_next_char(*n),
-                "<bs>": lambda *n: self.cur.cursor_prev_char(*n),
-                "f": lambda *n: self.cur.cursor_fnxt_char(*n),
-                "F": lambda *n: self.cur.cursor_fprv_char(*n),
 
                 "<C-up>": self.key_resize_h_sub,
                 "<C-down>": self.key_resize_h_add,
@@ -833,141 +986,9 @@ class Editor:
                     "k": self.key_winmove_up,
                     "j": self.key_winmove_down,
                 },
-
-                "d": {
-                    "h": lambda *n: self.cur.delete_to(self.cur.cursor_left, *n),
-                    "l": lambda *n: self.cur.delete_to(self.cur.cursor_right, *n),
-                    "k": lambda *n: self.cur.delete_to(self.cur.cursor_up, *n),
-                    "j": lambda *n: self.cur.delete_to(self.cur.cursor_down, *n),
-                    "<up>": lambda *n: self.cur.delete_to(self.cur.cursor_up, *n),
-                    "<down>": lambda *n: self.cur.delete_to(self.cur.cursor_down, *n),
-                    "<left>": lambda *n: self.cur.delete_to(self.cur.cursor_left, *n),
-                    "<right>": lambda *n: self.cur.delete_to(self.cur.cursor_right, *n),
-                    "<pageup>": lambda *n: self.cur.delete_to(self.cur.cursor_pageup, *n),
-                    "<pagedown>": lambda *n: self.cur.delete_to(self.cur.cursor_pagedown, *n),
-                    "<home>": lambda *n: self.cur.delete_to(self.cur.cursor_home, *n),
-                    "<end>": lambda *n: self.cur.delete_to(self.cur.cursor_end, *n),
-                    "w": lambda *n: self.cur.delete_to(self.cur.cursor_next_word_end, *n),
-                    "e": lambda *n: self.cur.delete_to(self.cur.cursor_next_word_end, *n),
-                    "b": lambda *n: self.cur.delete_to(self.cur.cursor_prev_word, *n),
-                    "g": {
-                        "g": lambda *n: self.cur.delete_to(self.cur.cursor_head, *n),
-                    },
-                    "G": lambda *n: self.cur.delete_to(self.cur.cursor_tail, *n),
-                    "0": lambda *n: self.cur.delete_to(self.cur.cursor_head, *n),
-                    "$": lambda *n: self.cur.delete_to(self.cur.cursor_tail, *n),
-                    "^": lambda *n: self.cur.delete_to(self.cur.cursor_start, *n),
-                    " ": lambda *n: self.cur.delete_to(self.cur.cursor_next_char, *n),
-                    "<bs>": lambda *n: self.cur.delete_to(self.cur.cursor_prev_char, *n),
-                    "f": lambda *n: self.cur.delete_to(self.cur.cursor_fnxt_char, *n),
-                    "F": lambda *n: self.cur.delete_to(self.cur.cursor_fprv_char, *n),
-                    "i": {
-                        "w": lambda *n: self.cur.delete_in(self.cur.get_range_cur_word, *n),
-                    },
-                    "d": lambda *n: self.cur.key_del_line(*n),
-                },
-                "c": {
-                    "h": lambda *n: self.cur.change_to(self.cur.cursor_left, *n),
-                    "l": lambda *n: self.cur.change_to(self.cur.cursor_right, *n),
-                    "k": lambda *n: self.cur.change_to(self.cur.cursor_up, *n),
-                    "j": lambda *n: self.cur.change_to(self.cur.cursor_down, *n),
-                    "<up>": lambda *n: self.cur.change_to(self.cur.cursor_up, *n),
-                    "<down>": lambda *n: self.cur.change_to(self.cur.cursor_down, *n),
-                    "<left>": lambda *n: self.cur.change_to(self.cur.cursor_left, *n),
-                    "<right>": lambda *n: self.cur.change_to(self.cur.cursor_right, *n),
-                    "<pageup>": lambda *n: self.cur.change_to(self.cur.cursor_pageup, *n),
-                    "<pagedown>": lambda *n: self.cur.change_to(self.cur.cursor_pagedown, *n),
-                    "<home>": lambda *n: self.cur.change_to(self.cur.cursor_home, *n),
-                    "<end>": lambda *n: self.cur.change_to(self.cur.cursor_end, *n),
-                    "w": lambda *n: self.cur.change_to(self.cur.cursor_next_word_end, *n),
-                    "e": lambda *n: self.cur.change_to(self.cur.cursor_next_word_end, *n),
-                    "b": lambda *n: self.cur.change_to(self.cur.cursor_prev_word, *n),
-                    "g": {
-                        "g": lambda *n: self.cur.change_to(self.cur.cursor_head, *n),
-                    },
-                    "G": lambda *n: self.cur.change_to(self.cur.cursor_tail, *n),
-                    "0": lambda *n: self.cur.change_to(self.cur.cursor_head, *n),
-                    "$": lambda *n: self.cur.change_to(self.cur.cursor_tail, *n),
-                    "^": lambda *n: self.cur.change_to(self.cur.cursor_start, *n),
-                    " ": lambda *n: self.cur.change_to(self.cur.cursor_next_char, *n),
-                    "<bs>": lambda *n: self.cur.change_to(self.cur.cursor_prev_char, *n),
-                    "f": lambda *n: self.cur.change_to(self.cur.cursor_fnxt_char, *n),
-                    "F": lambda *n: self.cur.change_to(self.cur.cursor_fprv_char, *n),
-                    "i": {
-                        "w": lambda *n: self.cur.change_in(self.cur.get_range_cur_word, *n),
-                    },
-                },
-                "y": {
-                    "h": lambda *n: self.cur.yank_to(self.cur.cursor_left, *n),
-                    "l": lambda *n: self.cur.yank_to(self.cur.cursor_right, *n),
-                    "k": lambda *n: self.cur.yank_to(self.cur.cursor_up, *n),
-                    "j": lambda *n: self.cur.yank_to(self.cur.cursor_down, *n),
-                    "<up>": lambda *n: self.cur.yank_to(self.cur.cursor_up, *n),
-                    "<down>": lambda *n: self.cur.yank_to(self.cur.cursor_down, *n),
-                    "<left>": lambda *n: self.cur.yank_to(self.cur.cursor_left, *n),
-                    "<right>": lambda *n: self.cur.yank_to(self.cur.cursor_right, *n),
-                    "<pageup>": lambda *n: self.cur.yank_to(self.cur.cursor_pageup, *n),
-                    "<pagedown>": lambda *n: self.cur.yank_to(self.cur.cursor_pagedown, *n),
-                    "<home>": lambda *n: self.cur.yank_to(self.cur.cursor_home, *n),
-                    "<end>": lambda *n: self.cur.yank_to(self.cur.cursor_end, *n),
-                    "w": lambda *n: self.cur.yank_to(self.cur.cursor_next_word_end, *n),
-                    "e": lambda *n: self.cur.yank_to(self.cur.cursor_next_word_end, *n),
-                    "b": lambda *n: self.cur.yank_to(self.cur.cursor_prev_word, *n),
-                    "g": {
-                        "g": lambda *n: self.cur.yank_to(self.cur.cursor_head, *n),
-                    },
-                    "G": lambda *n: self.cur.yank_to(self.cur.cursor_tail, *n),
-                    "0": lambda *n: self.cur.yank_to(self.cur.cursor_head, *n),
-                    "$": lambda *n: self.cur.yank_to(self.cur.cursor_tail, *n),
-                    "^": lambda *n: self.cur.yank_to(self.cur.cursor_start, *n),
-                    " ": lambda *n: self.cur.yank_to(self.cur.cursor_next_char, *n),
-                    "<bs>": lambda *n: self.cur.yank_to(self.cur.cursor_prev_char, *n),
-                    "f": lambda *n: self.cur.yank_to(self.cur.cursor_fnxt_char, *n),
-                    "F": lambda *n: self.cur.yank_to(self.cur.cursor_fprv_char, *n),
-                    "i": {
-                        "w": lambda *n: self.cur.yank_in(self.cur.get_range_cur_word, *n),
-                    },
-                    "y": lambda *n: self.cur.key_yank_line(*n),
-                },
             },
             "VISUAL": {
                 "<esc>": self.mode_normal,
-
-                "y": lambda *n: self.cur.select_yank(*n),
-                "c": lambda *n: self.cur.select_cut(*n),
-                "d": lambda *n: self.cur.select_del(*n),
-                "x": lambda *n: self.cur.select_del(*n),
-                "s": lambda *n: self.cur.select_del(*n),
-
-                "h": lambda *n: self.cur.cursor_left(*n),
-                "j": lambda *n: self.cur.cursor_down(*n),
-                "k": lambda *n: self.cur.cursor_up(*n),
-                "l": lambda *n: self.cur.cursor_right(*n),
-                "<up>": lambda *n: self.cur.cursor_up(*n),
-                "<down>": lambda *n: self.cur.cursor_down(*n),
-                "<left>": lambda *n: self.cur.cursor_left(*n),
-                "<right>": lambda *n: self.cur.cursor_right(*n),
-                "<pageup>": lambda *n: self.cur.cursor_pageup(*n),
-                "<pagedown>": lambda *n: self.cur.cursor_pagedown(*n),
-                "<home>": lambda *n: self.cur.cursor_home(*n),
-                "<end>": lambda *n: self.cur.cursor_end(*n),
-                "0": lambda *n: self.cur.cursor_home(*n),
-                "$": lambda *n: self.cur.cursor_end(*n),
-                "^": lambda *n: self.cur.cursor_start(*n),
-                "g": {
-                    "g": lambda *n: self.cur.cursor_head(*n),
-                },
-                "G": lambda *n: self.cur.cursor_tail(*n),
-                "w": lambda *n: self.cur.cursor_next_word(*n),
-                "b": lambda *n: self.cur.cursor_prev_word(*n),
-                "<space>": lambda *n: self.cur.cursor_next_char(*n),
-                "<bs>": lambda *n: self.cur.cursor_prev_char(*n),
-                "f": lambda *n: self.cur.cursor_fnxt_char(*n),
-                "F": lambda *n: self.cur.cursor_fprv_char(*n),
-
-                "i": {
-                    "w": lambda *n: self.cur.select_in(self.cur.get_range_cur_word, *n),
-                },
             },
             "COMMAND": {
                 "<esc>": self.mode_normal,
@@ -1054,18 +1075,6 @@ class Editor:
             self.cmd_pos -= 1
         elif self.cmd_pos == 1 and self.cur_cmd == ":":
             self.mode_normal()
-
-    def key_enter(self, *_):
-        if self.cur.cmp_menu:
-            self.cur.cmp_menu_accept()
-        else:
-            self.cur.insert("\n")
-
-    def key_tab(self, *_):
-        if self.cur.cmp_menu:
-            self.cur.cmp_select_next()
-        else:
-            self.cur.insert_tab()
 
     def accept_cmd(self, *_):
         self.cur_cmd = self.cur_cmd[1:].strip()
@@ -1323,17 +1332,38 @@ class Editor:
                 key = source()
             nrep = int(num)
         keys = [key]
-        if key in self.keymap[self.mode]:
-            k = self.keymap[self.mode][key]
-            while isinstance(k, dict):
+        if key in self.keymap[self.mode] or key in self.cur.keymap[self.mode]:
+            if key in self.keymap[self.mode]:
+                k = self.keymap[self.mode][key]
+            else:
+                k = None
+            if key in self.cur.keymap[self.mode]:
+                ck = self.cur.keymap[self.mode][key]
+            else:
+                ck = None
+            while isinstance(k, dict) or isinstance(ck, dict):
                 key = source()
                 keys.append(key)
-                if key in k:
+                if k and key in k:
                     k = k[key]
+                    if callable(k):
+                        return nrep, k, keys
+                    elif not isinstance(k, dict):
+                        k = None
                 else:
-                    break
+                    k = None
+                if ck and key in ck:
+                    ck = ck[key]
+                    if callable(ck):
+                        return nrep, ck, keys
+                    elif not isinstance(ck, dict):
+                        ck = None
+                else:
+                    ck = None
             if callable(k):
                 return nrep, k, keys
+            elif callable(ck):
+                return nrep, ck, keys
         return keys
 
     def mainloop(self):
