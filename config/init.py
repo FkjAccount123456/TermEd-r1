@@ -1,4 +1,4 @@
-from edcore import Editor
+from editor import Editor
 
 
 def init(editor: Editor):

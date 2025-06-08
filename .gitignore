@@ -1,6 +1,8 @@
 *~
 *.swp
 tags
+.tags
+.root/
 __pycache__/
 renderers/__pycache__/
 chat.txt
@@ -16,3 +18,5 @@ main-temp.py
 *.so
 *.exe
 .idea/
+.fleet/
+test*

@@ -381,7 +381,7 @@ def render(code: str):
     return buf
 
 
-libpyhl = ctypes.cdll.LoadLibrary(os.path.dirname(__file__) + "\\libpyhl.so")
+libpyhl = ctypes.cdll.LoadLibrary(os.path.dirname(__file__) + "/libpyhl.so")
 
 
 class PyTokList(ctypes.Structure):
@@ -438,7 +438,7 @@ class PythonRenderer(Renderer):
     # def get(self, y: int, x: int) -> str:
     #     return pyTokDict[self.buf[y][x]]
 
-    def render(self, target: int):
+    def render(self, *_):
         if self.buf is not None:
             libpyhl.PyHLRes_free(self.buf)
         # import time
@@ -462,6 +462,12 @@ class PythonRenderer(Renderer):
     
     def __del__(self):
         libpyhl.PyHLRes_free(self.buf)
+
+    def insert(self, *_): ...
+
+    def delete(self, *_): ...
+
+    def clear(self): ...
 
 
 libpyhl.init()

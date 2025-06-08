@@ -116,8 +116,9 @@ class TextInputer:
                 return self.delete(*hs.begin, *hs.end, True)
 
     def clear(self):
-        self.parent.renderer.rem(0, len(self.text) - 1)
-        self.parent.renderer.add(0, 0)
+        # self.parent.renderer.rem(0, len(self.text) - 1)
+        # self.parent.renderer.add(0, 0)
+        self.parent.renderer.clear()
         self.text.clear()
         self.text.append("")
         self.history = UndoTree(None, 0)
@@ -134,7 +135,6 @@ class TextInputer:
             begin = y, x
         yb = y
         tmp = ""
-        self.parent.renderer.change(yb)
         for ch in text:
             if ch == "\n":
                 self.text.insert(y + 1, self.text[y][x:])
@@ -146,21 +146,21 @@ class TextInputer:
                 pass
             else:
                 tmp += ch
-        self.parent.renderer.add(yb + 1, y)
         # gotoxy(20, 1)
         # print(yb + 1, y)
         self.text[y] = self.text[y][:x] + tmp + self.text[y][x:]
         x += len(tmp)
         # print(y, x, tmp)
         if not is_do:
-            end = [y, x]
-            if end[1]:
-                end[1] -= 1
+            ey, ex = y, x
+            if ex:
+                ex -= 1
             else:
-                end[0] -= 1
-                end[1] = len(self.text[end[0]])
+                ey -= 1
+                ex = len(self.text[ey])
             self.cur_history = self.cur_history.add(
-                History(HistoryType.Insert, begin, (end[0], end[1]), text))
+                History(HistoryType.Insert, begin, (ey, ex), text))
+        self.parent.renderer.insert(*begin, text)
         return y, x
 
     def delete(self, y: int, x: int, q: int, p: int, is_do=False):
@@ -170,11 +170,7 @@ class TextInputer:
         if not is_do:
             self.cur_history = self.cur_history.add(
                 History(HistoryType.Delete, (y, x), (q, p), self.get(y, x, q, p)))
-        self.parent.renderer.change(y)
-        if p == len(self.text[q]) and q < len(self.text) - 1:
-            self.parent.renderer.rem(y + 1, q + 1)
-        else:
-            self.parent.renderer.rem(y + 1, q)
+        self.parent.renderer.delete(y, x, q, p)
         if y == q:
             if p == len(self.text[y]):
                 self.text[y] = self.text[y][:x]

@@ -1,39 +1,61 @@
-from utils import colorcvt, cvt_truecolor
+from utils import colorcvt, cvt_truecolor, copy_structure
 
 
 class Renderer:
     def __init__(self, text: list[str]):
         self.text = text
-        self.ukb = 0  # Unknown-begin [0, ukb)
-        self.chs = [False for _ in range(len(self.text))]  # Changes
-        self.sts = []
+        self.change_points = []
+        self.states: list[list[int]] = copy_structure(text, fill=-1)
+        self.results: list[list[int]] = copy_structure(text, fill=-1)
 
-    # 补丁，也许Renderer马上也得重写了
-    def set_ukb(self):
+    def insert(self, y: int, x: int, text: str):
+        self.change_points.append((y, x))
+        for data in (self.states, self.results):
+            for ch in text:
+                tmp = 0
+                if ch == "\n":
+                    data.insert(y + 1, data[y][x:])
+                    data[y] = data[y][:x] + [-1] * tmp
+                    y += 1
+                    x = 0
+                    tmp = 0
+                elif ch == "\r":
+                    pass
+                else:
+                    tmp += 1
+
+    def delete(self, y: int, x: int, q: int, p: int):
+        self.change_points.append((y, x))
+        for data in (self.states, self.results):
+            if y == q:
+                if p == len(data[y]):
+                    data[y] = data[y][:x]
+                    if y + 1 < len(data):
+                        data[y] += data[y + 1]
+                        del data[y + 1]
+                else:
+                    data[y] = data[y][:x] + data[y][p + 1 :]
+            else:
+                data[y] = data[y][:x]
+                del data[y + 1 : q]
+                if p == len(data[y + 1]):
+                    del data[y + 1]
+                else:
+                    data[y + 1] = data[q][p + 1 :]
+                if y + 1 < len(data):
+                    data[y] += data[y + 1]
+                    del data[y + 1]
+
+    def render(self, ln: int, col: int):
         ...
-
-    def change(self, ln: int):
-        self.chs[ln] = True
-        self.ukb = min(self.ukb, ln)
-        self.chs[ln] = True
-
-    # [begin, end]
-    def add(self, begin: int, end: int):
-        assert begin <= len(self.sts)
-        self.ukb = min(self.ukb, begin)
-        self.chs = (
-            self.chs[:begin] + [True for _ in range(begin, end + 1)] + self.chs[begin:]
-        )
-
-    def rem(self, begin: int, end: int):
-        assert end < len(self.sts)
-        self.ukb = min(self.ukb, begin + 1)
-        del self.chs[begin : end + 1]
-
-    def render(self, target: int): ...
 
     def get(self, y: int, x: int) -> str:
         return "text"
+    
+    def clear(self):
+        self.change_points = []
+        self.states = [[]]
+        self.results = [[]]
 
 
 class Theme:

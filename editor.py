@@ -5,7 +5,6 @@ from screen import Screen
 from utils import ed_getch, flush, get_char_type, get_file_ext, get_width
 from drawer import Drawer
 from threading import Thread
-from pyperclip import copy, paste
 from buffer import BufferBase
 from ederrors import *
 import os
@@ -18,6 +17,7 @@ def get_terminal_size():
 
 
 HSplit, VSplit = False, True
+PrioBuffer = 0
 
 
 class Window:
@@ -179,9 +179,10 @@ class Buffer(Window, BufferBase):
                  editor: "Editor", parent: "tuple[Split, bool] | None"):
         Window.__init__(self, top, left, h, w, editor, parent)
         BufferBase.__init__(self)
+        self.prio = PrioBuffer
         self.file: str | None = None
         self.drawer = Drawer(editor.screen, self.text, self.left, self.top,
-                             self.h - 1, self.w, editor.theme, True)
+                             self.h - 1, self.w, editor.theme, True, self.prio)
 
         # 2025-4-30
         # 仅实验性功能，不确定是否长期保留
@@ -194,8 +195,12 @@ class Buffer(Window, BufferBase):
         self.cmp_maxwidth = 50
         self.cmp_minwidth = 10
 
+        self.read_callback: Callable | None = None
+
         self.keymap = {
             "INSERT": {
+                "<esc>": self.mode_normal,
+
                 "<up>": self.cursor_up,
                 "<down>": self.cursor_down,
                 "<left>": self.cursor_left,
@@ -215,6 +220,14 @@ class Buffer(Window, BufferBase):
                 "<C-y>": self.cmp_menu_accept,
             },
             "NORMAL": {
+                "i": self.mode_insert,
+                "v": self.mode_select,
+
+                "<C-up>": self.key_resize_h_sub,
+                "<C-down>": self.key_resize_h_add,
+                "<C-left>": self.key_resize_v_sub,
+                "<C-right>": self.key_resize_v_add,
+
                 "a": self.key_normal_a,
                 "A": self.key_normal_A,
                 "I": self.key_normal_I,
@@ -259,103 +272,17 @@ class Buffer(Window, BufferBase):
                 "f": self.cursor_fnxt_char,
                 "F": self.cursor_fprv_char,
 
-                "d": {
-                    "h": lambda *n: self.delete_to(self.cursor_left, *n),
-                    "l": lambda *n: self.delete_to(self.cursor_right, *n),
-                    "k": lambda *n: self.delete_to(self.cursor_up, *n),
-                    "j": lambda *n: self.delete_to(self.cursor_down, *n),
-                    "<up>": lambda *n: self.delete_to(self.cursor_up, *n),
-                    "<down>": lambda *n: self.delete_to(self.cursor_down, *n),
-                    "<left>": lambda *n: self.delete_to(self.cursor_left, *n),
-                    "<right>": lambda *n: self.delete_to(self.cursor_right, *n),
-                    "<pageup>": lambda *n: self.delete_to(self.cursor_pageup, *n),
-                    "<pagedown>": lambda *n: self.delete_to(self.cursor_pagedown, *n),
-                    "<home>": lambda *n: self.delete_to(self.cursor_home, *n),
-                    "<end>": lambda *n: self.delete_to(self.cursor_end, *n),
-                    "w": lambda *n: self.delete_to(self.cursor_next_word_end, *n),
-                    "e": lambda *n: self.delete_to(self.cursor_next_word_end, *n),
-                    "b": lambda *n: self.delete_to(self.cursor_prev_word, *n),
-                    "g": {
-                        "g": lambda *n: self.delete_to(self.cursor_head, *n),
-                    },
-                    "G": lambda *n: self.delete_to(self.cursor_tail, *n),
-                    "0": lambda *n: self.delete_to(self.cursor_head, *n),
-                    "$": lambda *n: self.delete_to(self.cursor_tail, *n),
-                    "^": lambda *n: self.delete_to(self.cursor_start, *n),
-                    " ": lambda *n: self.delete_to(self.cursor_next_char, *n),
-                    "<bs>": lambda *n: self.delete_to(self.cursor_prev_char, *n),
-                    "f": lambda *n: self.delete_to(self.cursor_fnxt_char, *n),
-                    "F": lambda *n: self.delete_to(self.cursor_fprv_char, *n),
-                    "i": {
-                        "w": lambda *n: self.delete_in(self.get_range_cur_word, *n),
-                    },
+                "d": self.merge_dict(self.gen_readpos_keymap(self.delete_to, self.delete_in), {
                     "d": lambda *n: self.key_del_line(*n),
-                },
-                "c": {
-                    "h": lambda *n: self.change_to(self.cursor_left, *n),
-                    "l": lambda *n: self.change_to(self.cursor_right, *n),
-                    "k": lambda *n: self.change_to(self.cursor_up, *n),
-                    "j": lambda *n: self.change_to(self.cursor_down, *n),
-                    "<up>": lambda *n: self.change_to(self.cursor_up, *n),
-                    "<down>": lambda *n: self.change_to(self.cursor_down, *n),
-                    "<left>": lambda *n: self.change_to(self.cursor_left, *n),
-                    "<right>": lambda *n: self.change_to(self.cursor_right, *n),
-                    "<pageup>": lambda *n: self.change_to(self.cursor_pageup, *n),
-                    "<pagedown>": lambda *n: self.change_to(self.cursor_pagedown, *n),
-                    "<home>": lambda *n: self.change_to(self.cursor_home, *n),
-                    "<end>": lambda *n: self.change_to(self.cursor_end, *n),
-                    "w": lambda *n: self.change_to(self.cursor_next_word_end, *n),
-                    "e": lambda *n: self.change_to(self.cursor_next_word_end, *n),
-                    "b": lambda *n: self.change_to(self.cursor_prev_word, *n),
-                    "g": {
-                        "g": lambda *n: self.change_to(self.cursor_head, *n),
-                    },
-                    "G": lambda *n: self.change_to(self.cursor_tail, *n),
-                    "0": lambda *n: self.change_to(self.cursor_head, *n),
-                    "$": lambda *n: self.change_to(self.cursor_tail, *n),
-                    "^": lambda *n: self.change_to(self.cursor_start, *n),
-                    " ": lambda *n: self.change_to(self.cursor_next_char, *n),
-                    "<bs>": lambda *n: self.change_to(self.cursor_prev_char, *n),
-                    "f": lambda *n: self.change_to(self.cursor_fnxt_char, *n),
-                    "F": lambda *n: self.change_to(self.cursor_fprv_char, *n),
-                    "i": {
-                        "w": lambda *n: self.change_in(self.get_range_cur_word, *n),
-                    },
-                },
-                "y": {
-                    "h": lambda *n: self.yank_to(self.cursor_left, *n),
-                    "l": lambda *n: self.yank_to(self.cursor_right, *n),
-                    "k": lambda *n: self.yank_to(self.cursor_up, *n),
-                    "j": lambda *n: self.yank_to(self.cursor_down, *n),
-                    "<up>": lambda *n: self.yank_to(self.cursor_up, *n),
-                    "<down>": lambda *n: self.yank_to(self.cursor_down, *n),
-                    "<left>": lambda *n: self.yank_to(self.cursor_left, *n),
-                    "<right>": lambda *n: self.yank_to(self.cursor_right, *n),
-                    "<pageup>": lambda *n: self.yank_to(self.cursor_pageup, *n),
-                    "<pagedown>": lambda *n: self.yank_to(self.cursor_pagedown, *n),
-                    "<home>": lambda *n: self.yank_to(self.cursor_home, *n),
-                    "<end>": lambda *n: self.yank_to(self.cursor_end, *n),
-                    "w": lambda *n: self.yank_to(self.cursor_next_word_end, *n),
-                    "e": lambda *n: self.yank_to(self.cursor_next_word_end, *n),
-                    "b": lambda *n: self.yank_to(self.cursor_prev_word, *n),
-                    "g": {
-                        "g": lambda *n: self.yank_to(self.cursor_head, *n),
-                    },
-                    "G": lambda *n: self.yank_to(self.cursor_tail, *n),
-                    "0": lambda *n: self.yank_to(self.cursor_head, *n),
-                    "$": lambda *n: self.yank_to(self.cursor_tail, *n),
-                    "^": lambda *n: self.yank_to(self.cursor_start, *n),
-                    " ": lambda *n: self.yank_to(self.cursor_next_char, *n),
-                    "<bs>": lambda *n: self.yank_to(self.cursor_prev_char, *n),
-                    "f": lambda *n: self.yank_to(self.cursor_fnxt_char, *n),
-                    "F": lambda *n: self.yank_to(self.cursor_fprv_char, *n),
-                    "i": {
-                        "w": lambda *n: self.yank_in(self.get_range_cur_word, *n),
-                    },
+                }),
+                "c": self.gen_readpos_keymap(self.change_to, self.change_in),
+                "y": self.merge_dict(self.gen_readpos_keymap(self.yank_to, self.yank_in), {
                     "y": lambda *n: self.key_yank_line(*n),
-                },
+                }),
             },
             "VISUAL": {
+                "<esc>": self.mode_normal,
+
                 "y": self.select_yank,
                 "c": self.select_cut,
                 "d": self.select_del,
@@ -395,6 +322,13 @@ class Buffer(Window, BufferBase):
             "COMMAND": {
             },
         }
+        self.cmdmap = {
+            "o": self.open_file,
+            "o!": lambda *n: self.open_file(*n, force=True),
+            "e": self.open_file,
+            "e!": lambda *n: self.open_file(*n, force=True),
+            "w": self.save_file,
+        }
 
     def close(self):
         super().close()
@@ -403,81 +337,94 @@ class Buffer(Window, BufferBase):
         # 2025-4-20 要干什么来着？
         # 这里貌似没有什么要改的了
 
-    def reopen(self):
-        assert self.file
-        with open(self.file, "r", encoding="utf-8") as f:
-            text = f.read()
-        self.textinputer.clear()
-        self.textinputer.insert(0, 0, text)
-        self.y = self.ideal_x = self.x = 0
-        self.textinputer.save()
-        self.renderer = get_renderer(get_file_ext(self.file))(self.text)
+    # 主打的就是一个多范式（
+    def gen_readpos_to_fn(self, fn: Callable):
+        return lambda *n: self.read_callback and self.read_callback(self.gen_rangeto_fn(fn, *n))
 
-    def open_file(self, arg: str, force=False):
-        arg = arg.strip()
-        old = self.file
-        if not arg:
-            if self.file and force and not self.textinputer.is_saved() and os.path.exists(self.file):
-                self.reopen()
-            return
-        if arg:
-            if self.file and os.path.abspath(self.file) == os.path.abspath(arg):
-                if force and not self.textinputer.is_saved() and os.path.exists(self.file):
-                    self.reopen()
-                return
-            self.file = arg
-        if self.file and (path := os.path.abspath(self.file)) in self.editor.fb_maps\
-                and self.editor.fb_maps[path]:
-            # 大换血啊（
-            #
-            model = self.editor.fb_maps[path].pop()
-            self.editor.fb_maps[path].add(model)
-            self.textinputer = model.textinputer
-            self.renderer = model.renderer
-            self.drawer.text = self.textinputer.text
-            self.text = self.textinputer.text
-        elif self.file:
-            if not os.path.exists(self.file):
-                self.textinputer.clear()
-                self.y = self.ideal_x = self.x = 0
-                self.textinputer.save()
-                self.renderer = get_renderer(get_file_ext(self.file))(self.text)
-            else:
-                with open(self.file, "r", encoding="utf-8") as f:
-                    text = f.read()
-                self.textinputer.clear()
-                self.textinputer.insert(0, 0, text)
-                self.y = self.ideal_x = self.x = 0
-                self.textinputer.save()
-                self.renderer = get_renderer(get_file_ext(self.file))(self.text)
-        if old is not None:
-            self.editor.fb_maps[os.path.abspath(old)].remove(self)
-        if self.file is not None:
-            if os.path.abspath(self.file) not in self.editor.fb_maps:
-                self.editor.fb_maps[os.path.abspath(self.file)] = set()
-            self.editor.fb_maps[os.path.abspath(self.file)].add(self)
+    def gen_readpos_in_fn(self, fn: Callable):
+        return lambda *n: self.read_callback and self.read_callback(lambda: fn(*n))
 
-    def save_file(self, arg: str):
-        if not (arg == "" and self.file is None):
-            if arg:
-                old_file = self.file
-                self.file = arg
+    # 有副作用
+    def merge_dict(self, k1: dict, k2: dict):
+        for k, v in k2.items():
+            if k in k1:
+                if isinstance(v, dict) and isinstance(k1[k], dict):
+                    k1[k] = self.merge_dict(k1[k], v)
+                else:
+                    k1[k] = v
             else:
-                old_file = self.file
-            if isinstance(self.file, str):
-                try:
-                    with open(self.file, "w", encoding="utf-8") as f:
-                        f.write("\n".join(self.text))
-                    self.textinputer.save()
-                    if not old_file or get_file_ext(self.file) != get_file_ext(old_file):
-                        self.renderer = get_renderer(get_file_ext(self.file))(self.text)
-                except:
-                    self.file = old_file
-            if old_file is not None and old_file != self.file and os.path.exists(old_file):
-                if os.path.abspath(old_file) in self.editor.fb_maps:
-                    self.editor.fb_maps[os.path.abspath(old_file)].pop()
-                if self.file is not None:
-                    self.editor.fb_maps[os.path.abspath(self.file)].add(self)
+                k1[k] = v
+        return k1
+
+    def gen_readpos_keymap(self, fn_to: Callable, fn_in: Callable):
+        return {
+            "h": lambda *n: fn_to(self.cursor_left, *n),
+            "l": lambda *n: fn_to(self.cursor_right, *n),
+            "k": lambda *n: fn_to(self.cursor_up, *n),
+            "j": lambda *n: fn_to(self.cursor_down, *n),
+            "<up>": lambda *n: fn_to(self.cursor_up, *n),
+            "<down>": lambda *n: fn_to(self.cursor_down, *n),
+            "<left>": lambda *n: fn_to(self.cursor_left, *n),
+            "<right>": lambda *n: fn_to(self.cursor_right, *n),
+            "<pageup>": lambda *n: fn_to(self.cursor_pageup, *n),
+            "<pagedown>": lambda *n: fn_to(self.cursor_pagedown, *n),
+            "<home>": lambda *n: fn_to(self.cursor_home, *n),
+            "<end>": lambda *n: fn_to(self.cursor_end, *n),
+            "w": lambda *n: fn_to(self.cursor_next_word_end, *n),
+            "e": lambda *n: fn_to(self.cursor_next_word_end, *n),
+            "b": lambda *n: fn_to(self.cursor_prev_word, *n),
+            "g": {
+                "g": lambda *n: self.delete_in(self.gen_rangeto_fn(self.cursor_head, *n)),
+            },
+            "G": lambda *n: fn_to(self.cursor_tail, *n),
+            "0": lambda *n: fn_to(self.cursor_head, *n),
+            "$": lambda *n: fn_to(self.cursor_tail, *n),
+            "^": lambda *n: fn_to(self.cursor_start, *n),
+            " ": lambda *n: fn_to(self.cursor_next_char, *n),
+            "<bs>": lambda *n: fn_to(self.cursor_prev_char, *n),
+            "f": lambda *n: fn_to(self.cursor_fnxt_char, *n),
+            "F": lambda *n: fn_to(self.cursor_fprv_char, *n),
+            "i": {
+                "w": lambda *n: fn_in(self.get_range_cur_word, *n),
+            },
+        }
+
+    def mode_select(self, *_):
+        self.mode = "VISUAL"
+        self.editor.mode = None
+        self.sely, self.selx = self.y, self.x
+
+    def mode_normal(self, *_):
+        self.mode = "NORMAL"
+        self.editor.mode = None
+
+    def mode_insert(self, *_):
+        self.mode = "INSERT"
+        self.editor.mode = None
+
+    def key_resize_h_add(self, n=1):
+        try:
+            self.resize_bottomup(self.h + n, self.w)
+        except:
+            pass
+
+    def key_resize_h_sub(self, n=1):
+        try:
+            self.resize_bottomup(self.h - n, self.w)
+        except:
+            pass
+
+    def key_resize_v_add(self, n=1):
+        try:
+            self.resize_bottomup(self.h, self.w + n)
+        except:
+            pass
+
+    def key_resize_v_sub(self, n=1):
+        try:
+            self.resize_bottomup(self.h, self.w - n)
+        except:
+            pass
 
     def key_enter(self, *_):
         if self.cmp_menu:
@@ -490,34 +437,6 @@ class Buffer(Window, BufferBase):
             self.cmp_select_next()
         else:
             self.insert_tab()
-
-    def insert_tab(self, *_):
-        self.y, self.x = self.textinputer.insert(self.y, self.x,
-                                                 " " * self.editor.tabsize)
-        self.ideal_x = self.x
-
-    def paste_before_cursor(self, n: int = 1):
-        for _ in range(n):
-            self.textinputer.insert(self.y, self.x, paste())
-
-    def paste_after_cursor(self, n: int = 1):
-        for _ in range(n):
-            self.y, self.x = self.textinputer.insert(self.y, self.x, paste())
-            self.ideal_x = self.x
-
-    # 使用Vim命名
-    def select_yank(self, *_):
-        copy(self.textinputer.get(self.sely, self.selx, self.y, self.x))
-        self.editor.mode = "NORMAL"
-
-    def select_cut(self, *_):
-        copy(self.textinputer.get(self.sely, self.selx, self.y, self.x))
-        self.y, self.x = self.textinputer.delete(self.sely, self.selx, self.y, self.x)
-        self.editor.mode = "INSERT"
-
-    def select_del(self, *_):
-        self.y, self.x = self.textinputer.delete(self.y, self.x, self.sely, self.selx)
-        self.editor.mode = "NORMAL"
 
     def cursor_pageup(self, n: int = 1):
         for _ in range(n):
@@ -540,107 +459,6 @@ class Buffer(Window, BufferBase):
             if self.y >= len(self.text):
                 self.y = len(self.text) - 1
         self.x = min(len(self.text[self.y]), self.ideal_x)
-
-    def get_range_to(self, move_fn: Callable, *args):
-        y, x, ideal_x = self.y, self.x, self.ideal_x
-        move_fn(*args)
-        y1, x1 = self.y, self.x
-        if (y1, x1) < (y, x):
-            y1, x1, y, x = y, x, y1, x1
-        self.y, self.x, self.ideal_x = y, x, ideal_x
-        return (y, x), (y1, x1)
-
-    def delete_to(self, move_fn: Callable, *args):
-        (y, x), (y1, x1) = self.get_range_to(move_fn, *args)
-        self.textinputer.delete(y, x, y1, x1)
-
-    def delete_in(self, range_fn: Callable, *args):
-        r = range_fn(*args)
-        if r:
-            self.y, self.x = self.textinputer.delete(*r[0], *r[1])
-            self.ideal_x = self.x
-
-    def change_to(self, move_fn: Callable, *args):
-        self.delete_to(move_fn, *args)
-        self.editor.mode = "INSERT"
-
-    def change_in(self, range_fn: Callable, *args):
-        self.delete_in(range_fn, *args)
-        self.editor.mode = "INSERT"
-
-    def yank_to(self, move_fn: Callable, *args):
-        (y, x), (y1, x1) = self.get_range_to(move_fn, *args)
-        self.textinputer.yank(y, x, y1, x1)
-
-    def yank_in(self, range_fn: Callable, *args):
-        r = range_fn(*args)
-        if r:
-            self.textinputer.yank(*r[0], *r[1])
-
-    def select_in(self, range_fn: Callable, *args):
-        r = range_fn(*args)
-        if r:
-            begin, end = r
-            self.sely, self.selx = begin
-            self.y, self.x = end
-            self.ideal_x = self.x
-
-    def key_normal_a(self, *_):
-        if self.x < len(self.text[self.y]):
-            self.x += 1
-            self.ideal_x = self.x
-        self.editor.mode = "INSERT"
-
-    def key_normal_A(self, *_):
-        self.x = self.ideal_x = len(self.text[self.y])
-        self.editor.mode = "INSERT"
-
-    def key_normal_I(self, *_):
-        self.editor.mode = "INSERT"
-        self.cursor_start()
-
-    def key_normal_o(self, *_):
-        self.key_normal_A()
-        self.insert("\n")
-
-    def key_normal_O(self, *_):
-        self.key_normal_I()
-        self.insert("\n")
-        self.cursor_prev_char()
-
-    def key_normal_s(self, n=1):
-        self.editor.mode_insert()
-        for _ in range(n):
-            if self.x < len(self.text[self.y]):
-                self.textinputer.delete(self.y, self.x, self.y, self.x)
-
-    def key_normal_S(self, *_):
-        self.key_normal_I()
-        self.textinputer.delete(self.y, 0, self.y, len(self.text[self.y]) - 1)
-
-    def key_normal_x(self, n=1):
-        for _ in range(n):
-            self.textinputer.delete(self.y, self.x, self.y, self.x)
-
-    def key_normal_D(self, *_):
-        self.textinputer.delete(self.y, self.x, self.y, len(self.text[self.y]) - 1)
-
-    def key_normal_C(self, *_):
-        self.textinputer.delete(self.y, self.x, self.y, len(self.text[self.y]) - 1)
-        self.editor.mode_insert()
-
-    def key_del_line(self, n=1):
-        for _ in range(n):
-            if self.y < len(self.text):
-                self.textinputer.delete(self.y, 0, self.y, len(self.text[self.y]))
-            else:
-                break
-
-    def key_yank_line(self, n=1):
-        res = "\n".join(self.text[self.y: self.y + n])
-        if self.y + n < len(self.text):
-            res += "\n"
-        copy(res)
 
     def cmp_select_next(self):
         if self.cmp_select == len(self.cmp_menu) - 1:
@@ -756,7 +574,7 @@ class Buffer(Window, BufferBase):
 
     def draw(self):
         self.drawer.scroll_buffer(self.y, self.x)
-        if self.editor.mode == "VISUAL":
+        if not self.editor.mode and self.mode == "VISUAL":
             if (self.y, self.x) < (self.sely, self.selx):
                 self.drawer.draw(self.renderer, (self.y, self.x), (self.sely, self.selx))
             else:
@@ -779,9 +597,9 @@ class Buffer(Window, BufferBase):
             else:
                 file = file[:self.w - 2] + ".."
         modeline = file
-        self.draw_text(self.top + self.h - 1, self.left, self.w, modeline, "modeline")
+        self.draw_text(self.top + self.h - 1, self.left, self.w, modeline, "modeline", PrioBuffer)
 
-        if self.cmp_menu and self.editor.cur == self and self.editor.mode == "INSERT":
+        if self.cmp_menu and self.editor.cur == self and self.editor.get_mode() == "INSERT":
             menu_h, menu_dir = self.get_menu_height()
             self.set_menu_scroll(menu_h)
             # 这很省行数了（
@@ -801,10 +619,86 @@ class Buffer(Window, BufferBase):
                 self.draw_text(ln, menu_left, menu_w,
                                self.cmp_menu[ln - start + self.cmp_scroll],
                                "completion" if ln - start + self.cmp_scroll != self.cmp_select else 'completion_selected',
-                               1)
+                               self.prio + 1)
 
         # self.editor.debug_points.extend([(self.top, self.left),
         #                                  (self.top + self.h - 1, self.left + self.w - 1)])
+
+    def reopen(self):
+        assert self.file
+        with open(self.file, "r", encoding="utf-8") as f:
+            text = f.read()
+        self.textinputer.clear()
+        self.textinputer.insert(0, 0, text)
+        self.y = self.ideal_x = self.x = 0
+        self.textinputer.save()
+        self.renderer = get_renderer(get_file_ext(self.file))(self.text)
+
+    def open_file(self, arg: str, force=False):
+        arg = arg.strip()
+        old = self.file
+        if not arg:
+            if self.file and force and not self.textinputer.is_saved() and os.path.exists(self.file):
+                self.reopen()
+            return
+        if arg:
+            if self.file and os.path.abspath(self.file) == os.path.abspath(arg):
+                if force and not self.textinputer.is_saved() and os.path.exists(self.file):
+                    self.reopen()
+                return
+            self.file = arg
+        if self.file and (path := os.path.abspath(self.file)) in self.editor.fb_maps\
+                and self.editor.fb_maps[path]:
+            # 大换血啊（
+            #
+            model = self.editor.fb_maps[path].pop()
+            self.editor.fb_maps[path].add(model)
+            self.textinputer = model.textinputer
+            self.renderer = model.renderer
+            self.drawer.text = self.textinputer.text
+            self.text = self.textinputer.text
+        elif self.file:
+            if not os.path.exists(self.file):
+                self.textinputer.clear()
+                self.y = self.ideal_x = self.x = 0
+                self.textinputer.save()
+                self.renderer = get_renderer(get_file_ext(self.file))(self.text)
+            else:
+                with open(self.file, "r", encoding="utf-8") as f:
+                    text = f.read()
+                self.textinputer.clear()
+                self.textinputer.insert(0, 0, text)
+                self.y = self.ideal_x = self.x = 0
+                self.textinputer.save()
+                self.renderer = get_renderer(get_file_ext(self.file))(self.text)
+        if old is not None:
+            self.editor.fb_maps[os.path.abspath(old)].remove(self)
+        if self.file is not None:
+            if os.path.abspath(self.file) not in self.editor.fb_maps:
+                self.editor.fb_maps[os.path.abspath(self.file)] = set()
+            self.editor.fb_maps[os.path.abspath(self.file)].add(self)
+
+    def save_file(self, arg: str):
+        if not (arg == "" and self.file is None):
+            if arg:
+                old_file = self.file
+                self.file = arg
+            else:
+                old_file = self.file
+            if isinstance(self.file, str):
+                try:
+                    with open(self.file, "w", encoding="utf-8") as f:
+                        f.write("\n".join(self.text))
+                    self.textinputer.save()
+                    if not old_file or get_file_ext(self.file) != get_file_ext(old_file):
+                        self.renderer = get_renderer(get_file_ext(self.file))(self.text)
+                except:
+                    self.file = old_file
+            if old_file is not None and old_file != self.file and os.path.exists(old_file):
+                if os.path.abspath(old_file) in self.editor.fb_maps:
+                    self.editor.fb_maps[os.path.abspath(old_file)].pop()
+                if self.file is not None:
+                    self.editor.fb_maps[os.path.abspath(self.file)].add(self)
 
 
 # Debug神器
@@ -819,7 +713,7 @@ class deprecated_TextWindow(Window):
         self.text = [""]
         self.renderer = get_renderer()(self.text)
         self.drawer = Drawer(editor.screen, self.text, self.left, self.top,
-                             self.h - 1, self.w, editor.theme, True)
+                             self.h - 1, self.w, editor.theme, True, 0)
 
     def add_log(self, s: str):
         self.text.insert(len(self.text) - 1, s)
@@ -967,18 +861,9 @@ class Editor:
         # 记得手动注册<cr> <tab> <space>
         self.keymap = {
             "INSERT": {
-                "<esc>": self.mode_normal,
             },
             "NORMAL": {
-                "i": self.mode_insert,
-
-                "v": self.mode_select,
                 ":": lambda *_: self.mode_command(":"),
-
-                "<C-up>": self.key_resize_h_sub,
-                "<C-down>": self.key_resize_h_add,
-                "<C-left>": self.key_resize_v_sub,
-                "<C-right>": self.key_resize_v_add,
 
                 ";": {
                     "h": self.key_winmove_left,
@@ -988,7 +873,6 @@ class Editor:
                 },
             },
             "VISUAL": {
-                "<esc>": self.mode_normal,
             },
             "COMMAND": {
                 "<esc>": self.mode_normal,
@@ -1006,31 +890,16 @@ class Editor:
         self.cmdmap = {
             "q": self.accept_cmd_close_window,
             "qa": self.quit_editor,
-            "o": lambda *n: self.cur.open_file(*n),
-            "o!": lambda *n: self.cur.open_file(*n, force=True),
-            "e": lambda *n: self.cur.open_file(*n),
-            "e!": lambda *n: self.cur.open_file(*n, force=True),
-            "w": lambda *n: self.cur.save_file(*n),
             "sp": self.accept_cmd_hsplit,
             "vsp": self.accept_cmd_vsplit,
-
-            "su": self.accept_cmd_select_parent,
-            "sc": self.accept_cmd_select_cur,
-            "s1": self.accept_cmd_split_1,
-            "s2": self.accept_cmd_split_2,
-            "ss": self.accept_cmd_set_cur,
-            "so": self.accept_cmd_select_sibling,  # 令我想起Emacs
             "sg": self.accept_cmd_goto_by_id,
             "wh": self.accept_cmd_resize_h,
             "ww": self.accept_cmd_resize_w,
         }
-        self.mode = "NORMAL"
+        self.mode: None | str = None  # BufferHold/EditorHold
         self.cur_cmd = ""
         self.cmd_pos = 0
         self.message = ""
-
-        self.tabsize = 4
-        self.selected_win: Window = self.cur
 
         self.debug_points: list[tuple[int, int]] = []
 
@@ -1038,17 +907,15 @@ class Editor:
         # self.debug_win: TextWindow = self.gwin.win2
         # self.gwin.change_pos(self.w // 4 * 3)
 
-    def mode_normal(self, *_):
-        self.mode = "NORMAL"
+    def get_mode(self):
+        if not self.mode:
+            return self.cur.mode
+        return self.mode
+
+    def mode_normal(self):
+        self.cur.mode_normal()
         self.cur_cmd = ""
         self.cmd_pos = 0
-
-    def mode_select(self, *_):
-        self.mode = "VISUAL"
-        self.cur.sely, self.cur.selx = self.cur.y, self.cur.x
-
-    def mode_insert(self, *_):
-        self.mode = "INSERT"
 
     def mode_command(self, s: str = ":"):
         self.mode = "COMMAND"
@@ -1085,39 +952,15 @@ class Editor:
         tail = self.cur_cmd[split_pos + 1:]
         if head in self.cmdmap:
             self.cmdmap[head](tail)
+        if head in self.cur.cmdmap:
+            self.cur.cmdmap[head](tail)
         self.mode_normal()
 
     def accept_cmd_hsplit(self, *_):
-        self.selected_win.split(HSplit)
+        self.cur.split(HSplit)
 
     def accept_cmd_vsplit(self, *_):
-        self.selected_win.split(VSplit)
-
-    def accept_cmd_select_parent(self, *_):
-        if self.selected_win.parent:
-            self.selected_win = self.selected_win.parent[0]
-
-    def accept_cmd_select_cur(self, *_):
-        self.selected_win = self.cur
-
-    def accept_cmd_split_1(self, *_):
-        if isinstance(self.selected_win, Split):
-            self.selected_win = self.selected_win.win1
-
-    def accept_cmd_split_2(self, *_):
-        if isinstance(self.selected_win, Split):
-            self.selected_win = self.selected_win.win2
-
-    def accept_cmd_set_cur(self, *_):
-        if isinstance(self.selected_win, Buffer):
-            self.cur = self.selected_win
-
-    def accept_cmd_select_sibling(self, *_):
-        if self.cur.parent:
-            if self.cur.parent[1] and isinstance(self.cur.parent[0].win1, Buffer):
-                self.cur = self.selected_win = self.cur.parent[0].win1
-            elif isinstance(self.cur.parent[0].win2, Buffer):
-                self.cur = self.selected_win = self.cur.parent[0].win2
+        self.cur.split(VSplit)
 
     def accept_cmd_goto_by_id(self, arg: str):
         try:
@@ -1125,9 +968,8 @@ class Editor:
         except:
             return
         if win_id in self.win_ids:
-            self.selected_win = self.win_ids[win_id]
-            if isinstance(self.selected_win, Buffer):
-                self.cur = self.selected_win
+            if isinstance(new := self.win_ids[win_id], Buffer):
+                self.cur = new
 
     def accept_cmd_resize_h(self, arg: str):
         try:
@@ -1151,45 +993,21 @@ class Editor:
         except:
             pass
 
-    def key_resize_h_add(self, n=1):
-        try:
-            self.cur.resize_bottomup(self.cur.h + n, self.cur.w)
-        except:
-            pass
-
-    def key_resize_h_sub(self, n=1):
-        try:
-            self.cur.resize_bottomup(self.cur.h - n, self.cur.w)
-        except:
-            pass
-
-    def key_resize_v_add(self, n=1):
-        try:
-            self.cur.resize_bottomup(self.cur.h, self.cur.w + n)
-        except:
-            pass
-
-    def key_resize_v_sub(self, n=1):
-        try:
-            self.cur.resize_bottomup(self.cur.h, self.cur.w - n)
-        except:
-            pass
-
     def key_winmove_right(self, *_):
         if (win := self.cur.find_right(self.cur.cursor_real_pos()[0])):
-            self.cur = self.selected_win = win
+            self.cur = win
 
     def key_winmove_left(self, *_):
         if (win := self.cur.find_left(self.cur.cursor_real_pos()[0])):
-            self.cur = self.selected_win = win
+            self.cur = win
 
     def key_winmove_up(self, *_):
         if (win := self.cur.find_up(self.cur.cursor_real_pos()[1])):
-            self.cur = self.selected_win = win
+            self.cur = win
 
     def key_winmove_down(self, *_):
         if (win := self.cur.find_down(self.cur.cursor_real_pos()[1])):
-            self.cur = self.selected_win = win
+            self.cur = win
 
     def cmd_insert(self, key: str):
         self.cur_cmd = self.cur_cmd[:self.cmd_pos] + \
@@ -1226,7 +1044,6 @@ class Editor:
         else:
             self.quit_editor()
             return
-        self.selected_win = self.cur
 
     def quit_editor(self, *_):
         self.running = False
@@ -1324,7 +1141,8 @@ class Editor:
     def read_keyseq(self, source: Callable) -> list[str] | tuple[int, Callable, list[str]]:
         key = source()
         nrep = -1
-        if self.mode not in ("COMMAND", "INSERT") and len(key) == 1 and key.isdigit():
+        mode = self.get_mode()
+        if mode not in ("COMMAND", "INSERT") and len(key) == 1 and key.isdigit() and key != '0':
             num = key
             key = source()
             while len(key) == 1 and key.isdigit():
@@ -1332,13 +1150,13 @@ class Editor:
                 key = source()
             nrep = int(num)
         keys = [key]
-        if key in self.keymap[self.mode] or key in self.cur.keymap[self.mode]:
-            if key in self.keymap[self.mode]:
-                k = self.keymap[self.mode][key]
+        if key in self.keymap[mode] or key in self.cur.keymap[mode]:
+            if key in self.keymap[mode]:
+                k = self.keymap[mode][key]
             else:
                 k = None
-            if key in self.cur.keymap[self.mode]:
-                ck = self.cur.keymap[self.mode][key]
+            if key in self.cur.keymap[mode]:
+                ck = self.cur.keymap[mode][key]
             else:
                 ck = None
             while isinstance(k, dict) or isinstance(ck, dict):
@@ -1379,6 +1197,10 @@ class Editor:
 
             self.message = ""
             keyseq = self.read_keyseq(self.async_getch)
+            # import utils
+            # utils.gotoxy(self.h + 1, 1)
+            # print(keyseq, self.mode, self.get_mode(), end="")
+            mode = self.get_mode()
             if isinstance(keyseq, tuple):
                 nrep, k, keys = keyseq
                 if callable(k):
@@ -1388,9 +1210,9 @@ class Editor:
                         k(nrep)
                     if len(keys) == 1 and keys[0] not in ("<C-n>", "<C-p>", "<tab>", "<bs>"):
                         need_cmp = False
-            elif self.mode == "INSERT" and len(keyseq) == len(keyseq[0]) == 1:
+            elif mode == "INSERT" and len(keyseq) == len(keyseq[0]) == 1:
                 self.cur.insert(keyseq[0])
                 need_cmp = True
-            elif self.mode == "COMMAND" and len(keyseq) == len(keyseq[0]) == 1:
+            elif mode == "COMMAND" and len(keyseq) == len(keyseq[0]) == 1:
                 self.cmd_insert(keyseq[0])
                 need_cmp = False

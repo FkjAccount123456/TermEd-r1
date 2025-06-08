@@ -1,20 +1,27 @@
-import editor
-from os import get_terminal_size
-from utils import clear
-import sys
-from renderers.renderers import finalize
+from utils import clear, reset_term
 
-if sys.platform == "win32":
-    import ctypes
+try:
+    import editor
+    from os import get_terminal_size
+    import sys
+    from renderers.renderers import finalize
 
-    kernel32 = ctypes.windll.kernel32
-    kernel32.SetConsoleMode(kernel32.GetStdHandle(-11), 7)
+    if sys.platform == "win32":
+        import ctypes
 
-editor = editor.Editor(get_terminal_size().lines, get_terminal_size().columns)
-if len(sys.argv) > 1:
-    editor.cur.open_file(sys.argv[1])
-editor.mainloop()
+        kernel32 = ctypes.windll.kernel32
+        kernel32.SetConsoleMode(kernel32.GetStdHandle(-11), 7)
 
-clear()
+    editor = editor.Editor(get_terminal_size().lines, get_terminal_size().columns)
+    if len(sys.argv) > 1:
+        editor.cur.open_file(sys.argv[1])
+    editor.mainloop()
 
-finalize()
+    clear()
+    finalize()
+
+except Exception as e:
+    reset_term()
+    raise e
+
+reset_term()

@@ -20,10 +20,11 @@ class Drawer:
 
     def __init__(self, screen: Screen, text: list[str],
                  top: int, left: int, h: int, w: int,
-                 theme: Theme, linum: bool):
+                 theme: Theme, linum: bool, prio: int):
         self.screen, self.text = screen, text
         self.top, self.left = top, left
         self.theme, self.linum = theme, linum
+        self.prio = prio
         self.update_size(h, w)
 
         self.scry, self.scrys = 0, 0
@@ -135,8 +136,8 @@ class Drawer:
     # 显然并不能做出太大的改变，不过能改一点是一点
     def draw(self, render: Renderer,
              selb: tuple[int, int] | None = None, sele: tuple[int, int] | None =None):
-        render.set_ukb()
-        render.render(self.scroll_down(self.scry, self.scrys, self.h - 1)[0])
+        target_ln = min(self.scroll_down(self.scry, self.scrys, self.h - 1)[0], len(self.text) - 1)
+        render.render(target_ln, len(self.text[target_ln]) - 1)
         scrcnt = 0
         cy, cys = self.scry, self.scrys
         curln = self.process_line(self.text[cy])
@@ -152,12 +153,12 @@ class Drawer:
                         linum = f"%{self.linum_w - 1}d " % (cy + 1)
                         for ch in linum:
                             self.screen.change(self.top + scrcnt, self.left + cursh,
-                                               ch, self.theme.get("linum", False))
+                                               ch, self.theme.get("linum", False), self.prio)
                             cursh += 1
                     else:
                         while cursh < self.linum_w:
                             self.screen.change(self.top + scrcnt, self.left + cursh,
-                                               " ", self.theme.get("linum", False))
+                                               " ", self.theme.get("linum", False), self.prio)
                             cursh += 1
 
                 i = -1
@@ -168,18 +169,18 @@ class Drawer:
                         insel = False
                     color = self.theme.get(render.get(cy, i), insel)
                     self.screen.change(self.top + scrcnt, self.left + cursh,
-                                    (ch := self.text[cy][i]), color)
+                                    (ch := self.text[cy][i]), color, self.prio)
                     cursh += 1
                     for _ in range(get_width(ch) - 1):
                         self.screen.change(self.top + scrcnt, self.left + cursh,
-                                        "", color)
+                                        "", color, self.prio)
                         cursh += 1
 
             if i is not None:
                 i += 1
             while cursh < self.full_w:
                 self.screen.change(self.top + scrcnt, self.left + cursh,
-                                   " ", self.theme.get("text", False))
+                                   " ", self.theme.get("text", False), self.prio)
                 cursh += 1
                 if not isend:
                     i = None

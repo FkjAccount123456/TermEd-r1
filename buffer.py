@@ -1,8 +1,9 @@
 from textinputer import TextInputer
 from renderers.renderers import get_renderer
-from msvcrt import getwch as getch
-
+from utils import getch
+from pyperclip import paste, copy
 from utils import get_char_type
+from typing import Callable
 
 
 class BufferBase:
@@ -12,6 +13,10 @@ class BufferBase:
         self.renderer = get_renderer()(self.text)
         self.y, self.x, self.ideal_x = 0, 0, 0
         self.sely, self.selx = 0, 0
+        self.mode = "NORMAL"
+
+        self.tabsize = 4
+
         self.textinputer.save()
 
     def undo(self, n: int = 1):
@@ -32,6 +37,115 @@ class BufferBase:
         self.y, self.x = self.textinputer.insert(self.y, self.x, s)
         self.ideal_x = self.x
 
+    def insert_tab(self, *_):
+        self.y, self.x = self.textinputer.insert(self.y, self.x,
+                                                 " " * self.tabsize)
+        self.ideal_x = self.x
+
+    def get_range_to(self, move_fn: Callable, *args):
+        y, x, ideal_x = self.y, self.x, self.ideal_x
+        move_fn(*args)
+        y1, x1 = self.y, self.x
+        if (y1, x1) < (y, x):
+            y1, x1, y, x = y, x, y1, x1
+        self.y, self.x, self.ideal_x = y, x, ideal_x
+        return (y, x), (y1, x1)
+
+    def gen_rangeto_fn(self, move_fn: Callable, *args):
+        return lambda: self.get_range_to(move_fn, *args)
+
+    def delete_to(self, move_fn: Callable, *args):
+        (y, x), (y1, x1) = self.get_range_to(move_fn, *args)
+        self.textinputer.delete(y, x, y1, x1)
+
+    def delete_in(self, range_fn: Callable, *args):
+        r = range_fn(*args)
+        if r:
+            self.y, self.x = self.textinputer.delete(*r[0], *r[1])
+            self.ideal_x = self.x
+
+    def change_to(self, move_fn: Callable, *args):
+        self.delete_to(move_fn, *args)
+        self.mode = "INSERT"
+
+    def change_in(self, range_fn: Callable, *args):
+        self.delete_in(range_fn, *args)
+        self.mode = "INSERT"
+
+    def yank_to(self, move_fn: Callable, *args):
+        (y, x), (y1, x1) = self.get_range_to(move_fn, *args)
+        copy(self.textinputer.get(y, x, y1, x1))
+
+    def yank_in(self, range_fn: Callable, *args):
+        r = range_fn(*args)
+        if r:
+            copy(self.textinputer.get(*r[0], *r[1]))
+
+    def select_in(self, range_fn: Callable, *args):
+        r = range_fn(*args)
+        if r:
+            begin, end = r
+            self.sely, self.selx = begin
+            self.y, self.x = end
+            self.ideal_x = self.x
+
+    def key_normal_a(self, *_):
+        if self.x < len(self.text[self.y]):
+            self.x += 1
+            self.ideal_x = self.x
+        self.mode = "INSERT"
+
+    def key_normal_A(self, *_):
+        self.x = self.ideal_x = len(self.text[self.y])
+        self.mode = "INSERT"
+
+    def key_normal_I(self, *_):
+        self.mode = "INSERT"
+        self.cursor_start()
+
+    def key_normal_o(self, *_):
+        self.key_normal_A()
+        self.insert("\n")
+
+    def key_normal_O(self, *_):
+        self.key_normal_I()
+        self.insert("\n")
+        self.cursor_prev_char()
+
+    def key_normal_s(self, n=1):
+        self.mode = "INSERT"
+        for _ in range(n):
+            if self.x < len(self.text[self.y]):
+                self.textinputer.delete(self.y, self.x, self.y, self.x)
+
+    def key_normal_S(self, *_):
+        self.key_normal_I()
+        self.textinputer.delete(self.y, 0, self.y, len(self.text[self.y]) - 1)
+
+    def key_normal_x(self, n=1):
+        for _ in range(n):
+            self.textinputer.delete(self.y, self.x, self.y, self.x)
+
+    def key_normal_D(self, *_):
+        self.textinputer.delete(self.y, self.x, self.y, len(self.text[self.y]) - 1)
+
+    def key_normal_C(self, *_):
+        self.textinputer.delete(self.y, self.x, self.y, len(self.text[self.y]) - 1)
+        self.mode = "INSERT"
+
+    def key_del_line(self, n=1):
+        for _ in range(n):
+            if self.y < len(self.text):
+                self.textinputer.delete(self.y, 0, self.y, len(self.text[self.y]))
+            else:
+                break
+
+    def key_yank_line(self, n=1):
+        res = "\n".join(self.text[self.y: self.y + n])
+        if self.y + n < len(self.text):
+            res += "\n"
+        copy(res)
+
     def del_before_cursor(self, *_):
         if self.x:
             self.y, self.x = self.textinputer.delete(
@@ -45,6 +159,29 @@ class BufferBase:
                 len(self.text[self.y - 1]),
             )
         self.ideal_x = self.x
+
+    def paste_before_cursor(self, n: int = 1):
+        for _ in range(n):
+            self.textinputer.insert(self.y, self.x, paste())
+
+    # 使用Vim命名
+    def select_yank(self, *_):
+        copy(self.textinputer.get(self.sely, self.selx, self.y, self.x))
+        self.mode = "NORMAL"
+
+    def select_cut(self, *_):
+        copy(self.textinputer.get(self.sely, self.selx, self.y, self.x))
+        self.y, self.x = self.textinputer.delete(self.sely, self.selx, self.y, self.x)
+        self.mode = "INSERT"
+
+    def select_del(self, *_):
+        self.y, self.x = self.textinputer.delete(self.y, self.x, self.sely, self.selx)
+        self.mode = "NORMAL"
+
+    def paste_after_cursor(self, n: int = 1):
+        for _ in range(n):
+            self.y, self.x = self.textinputer.insert(self.y, self.x, paste())
+            self.ideal_x = self.x
 
     def del_at_cursor(self, n: int = 1):
         for _ in range(n):
