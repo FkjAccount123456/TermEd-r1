@@ -19,9 +19,9 @@ class Screen:
         self.prio = [[0 for i in range(w)] for j in range(h)]
 
     def change(self, y: int, x: int, ch: str, color: str, prio=0):
-        if prio < self.prio[y][x]:
-            return
         if y < 0 or x < 0 or y >= self.h or x >= self.w:
+            return
+        if prio < self.prio[y][x]:
             return
         if self.data[y][x] != ch or self.color[y][x] != color:
             self.changed.add((y, x))
@@ -72,7 +72,11 @@ class Screen:
             gotoxy(y + 1, x + 1)
             print("\033[41m \033[0m", end="")
 
-        gotoxy(self.y + 1, self.x + 1)
-        print("\033[0m\033[?25h", end="")
+        if self.y != -1 and self.x != -1:
+            gotoxy(self.y + 1, self.x + 1)
+            print("\033[0m\033[?25h", end="")
+            self.y = self.x = -1
+        else:
+            print("\033[0m", end="")
 
         self.prio = [[0 for i in range(self.w)] for j in range(self.h)]

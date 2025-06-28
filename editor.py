@@ -7,6 +7,7 @@ from drawer import Drawer
 from threading import Thread
 from buffer import BufferBase
 from ederrors import *
+from utils import log
 import os
 
 
@@ -20,6 +21,111 @@ HSplit, VSplit = False, True
 PrioBuffer = 0
 
 
+# 又是可恶的徒手绘图（
+# 要不然封装一下吧
+def draw_text(self: "Window", top: int, left: int, width: int, text: str, tp: str, prio=0):
+    # print(f"draw_text{(type(self).__name__, top, left, width, len(text), tp, prio)}")
+    shw = 0
+    color = self.editor.theme.get(tp, False)
+    for ch in text:
+        cur_width = get_width(ch)
+        if shw + cur_width > width:
+            break
+        self.editor.screen.change(top, left + shw, ch, color, prio)
+        shw += 1
+        for _ in range(1, cur_width):
+            self.editor.screen.change(top, left + shw, "", color, prio)
+            shw += 1
+    while shw < width:
+        self.editor.screen.change(top, left + shw, " ", color, prio)
+        shw += 1
+
+
+class FileBase(BufferBase):
+    def __init__(self, editor: "Editor"):
+        super().__init__()
+        self.editor = editor
+
+    def reset_drawer(self):
+        ...
+
+    def reopen(self):
+        assert self.file
+        with open(self.file, "r", encoding="utf-8") as f:
+            text = f.read()
+        self.textinputer.clear()
+        self.textinputer.insert(0, 0, text)
+        self.y = self.ideal_x = self.x = 0
+        self.textinputer.save()
+        self.renderer = get_renderer(get_file_ext(self.file))(self.text)
+
+    def open_file(self, arg: str, force=False):
+        arg = arg.strip()
+        old = self.file
+        if not arg:
+            if self.file and force and not self.textinputer.is_saved() and os.path.exists(self.file):
+                self.reopen()
+            return
+        if arg:
+            if self.file and os.path.abspath(self.file) == os.path.abspath(arg):
+                if force and not self.textinputer.is_saved() and os.path.exists(self.file):
+                    self.reopen()
+                return
+            self.file = arg
+        if self.file and (path := os.path.abspath(self.file)) in self.editor.fb_maps\
+                and self.editor.fb_maps[path]:
+            # 大换血啊（
+            #
+            model = self.editor.fb_maps[path].pop()
+            self.editor.fb_maps[path].add(model)
+            self.textinputer = model.textinputer
+            self.renderer = model.renderer
+            self.reset_drawer()
+            self.text = self.textinputer.text
+        elif self.file:
+            if not os.path.exists(self.file):
+                self.textinputer.clear()
+                self.y = self.ideal_x = self.x = 0
+                self.textinputer.save()
+                self.renderer = get_renderer(get_file_ext(self.file))(self.text)
+            else:
+                with open(self.file, "r", encoding="utf-8") as f:
+                    text = f.read()
+                self.textinputer.clear()
+                self.textinputer.insert(0, 0, text)
+                self.y = self.ideal_x = self.x = 0
+                self.textinputer.save()
+                self.renderer = get_renderer(get_file_ext(self.file))(self.text)
+        if old is not None:
+            self.editor.fb_maps[os.path.abspath(old)].remove(self)
+        if self.file is not None:
+            if os.path.abspath(self.file) not in self.editor.fb_maps:
+                self.editor.fb_maps[os.path.abspath(self.file)] = set()
+            self.editor.fb_maps[os.path.abspath(self.file)].add(self)
+
+    def save_file(self, arg: str):
+        if not (arg == "" and self.file is None):
+            if arg:
+                old_file = self.file
+                self.file = arg
+            else:
+                old_file = self.file
+            if isinstance(self.file, str):
+                try:
+                    with open(self.file, "w", encoding="utf-8") as f:
+                        f.write("\n".join(self.text))
+                    self.textinputer.save()
+                    if not old_file or get_file_ext(self.file) != get_file_ext(old_file):
+                        self.renderer = get_renderer(get_file_ext(self.file))(self.text)
+                except:
+                    self.file = old_file
+            if old_file is not None and old_file != self.file and os.path.exists(old_file):
+                if os.path.abspath(old_file) in self.editor.fb_maps:
+                    self.editor.fb_maps[os.path.abspath(old_file)].pop()
+                if self.file is not None:
+                    self.editor.fb_maps[os.path.abspath(self.file)].add(self)
+
+
 class Window:
     def __init__(self, top: int, left: int, h: int, w: int,
                  editor: "Editor", parent: "tuple[Split, bool] | None"):
@@ -28,7 +134,8 @@ class Window:
         self.id = self.editor.alloc_id(self)
 
     def close(self):
-        del self.editor.win_ids[self.id]
+        # del self.editor.win_ids[self.id]
+        self.editor.remove_id(self.id)
 
     def find_buffer(self) -> "Buffer | None":
         ...
@@ -38,7 +145,7 @@ class Window:
             raise WinResizeError()
 
     def check_resize(self, h: int, w: int) -> bool:
-        ...
+        return h >= 10 and w >= 20
 
     def resize_bottomup(self, h: int, w: int):
         if not self.check_resize(h, w) or not self.parent:
@@ -147,7 +254,7 @@ class Window:
         if self.h < 20 and sp_tp == HSplit or self.w < 40 and sp_tp == VSplit:
             return
         if buf_tp is None:
-            buf_tp = Buffer
+            buf_tp = TextBuffer
         if sp_tp == HSplit:
             upper_h = self.h // 2
             new_sp = Split(self.top, self.left, self.h, self.w,
@@ -156,11 +263,13 @@ class Window:
             new_buf = buf_tp(self.top + upper_h, self.left, self.h - upper_h, self.w,
                              self.editor, (new_sp, True), *args)
         else:
+            # log(("split", self.h, self.w, (self.w - 1) // 2))
             left_w = (self.w - 1) // 2
             new_sp = Split(self.top, self.left, self.h, self.w,
                            self.editor, self.parent, sp_tp, left_w + 1)
+            new_w = self.w - left_w - 1
             self.resize(self.h, left_w)
-            new_buf = buf_tp(self.top, self.left + left_w + 1, self.h, self.w - left_w - 1,
+            new_buf = buf_tp(self.top, self.left + left_w + 1, self.h, new_w,
                              self.editor, (new_sp, True), *args)
 
         new_sp.win1, new_sp.win2 = self, new_buf
@@ -174,11 +283,191 @@ class Window:
             new_sp.editor.gwin = new_sp
 
 
-class Buffer(Window, BufferBase):
+class Buffer(Window):
     def __init__(self, top: int, left: int, h: int, w: int,
                  editor: "Editor", parent: "tuple[Split, bool] | None"):
         Window.__init__(self, top, left, h, w, editor, parent)
-        BufferBase.__init__(self)
+        self.keymap = {}
+        self.cmdmap = {}
+
+    def cursor_real_pos(self) -> tuple[int, int]:
+        ...
+
+    def mode_normal(self):
+        ...
+
+    def find_buffer(self) -> "Buffer | None":
+        return self
+
+
+class FileExplorer(Buffer):
+    def __init__(self, top: int, left: int, h: int, w: int,
+                 editor: "Editor", parent: "tuple[Split, bool] | None", path=None):
+        Buffer.__init__(self, top, left, h, w, editor, parent)
+        self.expanded = set()
+        self.root = os.path.abspath(os.curdir if not path or not os.path.exists(path) or not os.path.isdir(path) else path)
+        self.file_tree = self.build_tree(self.root)
+        self.scroll = 0
+        self.y = 0
+        self.buffer = self.gen_buffer(self.file_tree)
+
+        self.keymap = {
+            "INSERT": {},
+            "NORMAL": {
+                "j": self.cursor_down,
+                "k": self.cursor_up,
+                "<down>": self.cursor_down,
+                "<up>": self.cursor_up,
+                "R": self.update,
+                "g": {
+                    "g": self.cursor_head,
+                },
+                "G": self.cursor_tail,
+                "<pageup>": self.cursor_pageup,
+                "<pagedown>": self.cursor_pagedown,
+                "o": self.proc_open,
+                "<cr>": self.proc_open,
+                "<tab>": self.proc_open,
+                "c": self.proc_change_root,
+                "p": self.proc_change_to_parent,
+            },
+            "VISUAL": {},
+            "COMMAND": {},
+        }
+        self.cmdmap = {
+            "cd": self.change_root,
+        }
+
+    def resize(self, h: int, w: int):
+        Window.resize(self, self.h, self.w)
+        self.h, self.w = h, w
+
+    def move(self, top: int, left: int):
+        self.left, self.top = left, top
+
+    def cursor_real_pos(self) -> tuple[int, int]:
+        return self.top + self.y, self.left
+
+    def cursor_up(self, n: int = 1):
+        if self.y > 0:
+            self.y -= 1
+
+    def cursor_down(self, n: int = 1):
+        if self.y < len(self.buffer) - 1:
+            self.y += 1
+
+    def cursor_head(self, *_):
+        self.y = 0
+
+    def cursor_tail(self, n: int = -1):
+        self.y = len(self.buffer) - 1
+
+    def cursor_pageup(self, n: int = 1):
+        for _ in range(n):
+            self.y = max(0, self.y - self.h + 1)
+
+    def cursor_pagedown(self, n: int = 1):
+        for _ in range(n):
+            self.y = min(len(self.buffer) - 1, self.y + self.h - 1)
+
+    def proc_open(self):
+        # print("proc_open", self.buffer[self.y + self.scroll])
+        if os.path.isdir(self.buffer[self.y + self.scroll][1]):
+            if self.buffer[self.y + self.scroll][1] not in self.expanded:
+                self.expanded.add(self.buffer[self.y + self.scroll][1])
+            else:
+                self.expanded.remove(self.buffer[self.y + self.scroll][1])
+            self.update()
+        else:
+            ok = False
+            for winid in reversed(self.editor.winmove_seq):
+                if isinstance(self.editor.win_ids[winid], FileBase):
+                    self.editor.cur = self.editor.win_ids[winid]
+                    if isinstance(self.editor.cur, FileBase):
+                        self.editor.cur.open_file(self.buffer[self.y + self.scroll][1])
+                    ok = True
+            if not ok:
+                self.split(VSplit, TextBuffer)
+                if self.parent and isinstance(self.parent[0].win2, TextBuffer):
+                    self.editor.cur = self.parent[0].win2
+                if isinstance(self.editor.cur, FileBase):
+                    self.editor.cur.open_file(self.buffer[self.y + self.scroll][1])
+                self.resize_bottomup(self.h, max(30, self.editor.w // 5))
+
+    def proc_change_root(self):
+        self.change_root(self.buffer[self.y + self.scroll][1])
+
+    def proc_change_to_parent(self):
+        if os.path.abspath(os.path.join(self.root, os.pardir)) != self.root:
+            self.change_root(os.path.abspath(os.path.join(self.root, os.pardir)))
+
+    def build_tree(self, path: str):
+        tree = []
+        for name in sorted(os.listdir(path)):
+            full_path = os.path.join(path, name)
+            if os.path.isdir(full_path):
+                if full_path not in self.expanded:
+                    tree.append((name, full_path, None))
+                else:
+                    tree.append((name, full_path, self.build_tree(full_path)))
+            else:
+                tree.append((name, full_path))
+        return tree
+
+    def gen_buffer(self, tree: list | None, level: int = 0) -> list[str]:
+        if tree is None:
+            return []
+        res = []
+        for i in tree:
+            if len(i) == 3:
+                res.append(('  ' * level + '~ ' + i[0], i[1]))
+                res.extend(self.gen_buffer(i[2], level + 1))
+            else:
+                res.append(('  ' + '  ' * level + i[0], i[1]))
+        return res
+
+    def scroll_buffer(self, y: int):
+        if y < self.scroll:
+            self.scroll = y
+        elif y - self.h + 2 > self.scroll:
+            self.scroll = y - self.h + 2
+
+    def update(self):
+        self.file_tree = self.build_tree(self.root)
+        self.buffer = self.gen_buffer(self.file_tree)
+
+    def change_root(self, root: str):
+        if not os.path.exists(root) or not os.path.isdir(root):
+            return
+        self.root = os.path.abspath(root)
+        self.y = 0
+        self.update()
+
+    def draw(self):
+        self.scroll_buffer(self.y)
+        if self.buffer:
+            for i in range(0, self.h - 1):
+                if self.scroll + i < len(self.buffer):
+                    draw_text(self, self.top + i, self.left, self.w,
+                              self.buffer[self.scroll + i][0],
+                              "sel" if i + self.scroll == self.y and self.editor.cur == self else "text",
+                              PrioBuffer)
+                else:
+                    draw_text(self, self.top + i, self.left, self.w,
+                              "", "text", PrioBuffer)
+        else:
+            for i in range(0, self.h - 1):
+                draw_text(self, self.top + i, self.left, self.w,
+                          "", "sel" if self.editor.cur == self else "text", PrioBuffer)
+        draw_text(self, self.top + self.h - 1, self.left, self.w,
+                  "Tree: " + self.root, "modeline", PrioBuffer)
+
+
+class TextBuffer(Buffer, FileBase):
+    def __init__(self, top: int, left: int, h: int, w: int,
+                 editor: "Editor", parent: "tuple[Split, bool] | None"):
+        Buffer.__init__(self, top, left, h, w, editor, parent)
+        FileBase.__init__(self, editor)
         self.prio = PrioBuffer
         self.file: str | None = None
         self.drawer = Drawer(editor.screen, self.text, self.left, self.top,
@@ -388,6 +677,9 @@ class Buffer(Window, BufferBase):
                 "w": lambda *n: fn_in(self.get_range_cur_word, *n),
             },
         }
+    
+    def reset_drawer(self):
+        self.drawer.text = self.textinputer.text
 
     def mode_select(self, *_):
         self.mode = "VISUAL"
@@ -554,24 +846,6 @@ class Buffer(Window, BufferBase):
         cursor = self.drawer.draw_cursor(self.y, self.x)
         return cursor[0] + self.top, cursor[1] + self.left
 
-    # 又是可恶的徒手绘图（
-    # 要不然封装一下吧
-    def draw_text(self, top: int, left: int, width: int, text: str, tp: str, prio=0):
-        shw = 0
-        color = self.editor.theme.get(tp, False)
-        for ch in text:
-            cur_width = get_width(ch)
-            if shw + cur_width > width:
-                break
-            self.editor.screen.change(top, left + shw, ch, color, prio)
-            shw += 1
-            for _ in range(1, cur_width):
-                self.editor.screen.change(top, left + shw, "", color, prio)
-                shw += 1
-        while shw < width:
-            self.editor.screen.change(top, left + shw, " ", color, prio)
-            shw += 1
-
     def draw(self):
         self.drawer.scroll_buffer(self.y, self.x)
         if not self.editor.mode and self.mode == "VISUAL":
@@ -597,7 +871,7 @@ class Buffer(Window, BufferBase):
             else:
                 file = file[:self.w - 2] + ".."
         modeline = file
-        self.draw_text(self.top + self.h - 1, self.left, self.w, modeline, "modeline", PrioBuffer)
+        draw_text(self, self.top + self.h - 1, self.left, self.w, modeline, "modeline", PrioBuffer)
 
         if self.cmp_menu and self.editor.cur == self and self.editor.get_mode() == "INSERT":
             menu_h, menu_dir = self.get_menu_height()
@@ -616,89 +890,13 @@ class Buffer(Window, BufferBase):
                 r = range(cursor_real_pos[0] + 1, cursor_real_pos[0] + 1 + menu_h)
                 start = cursor_real_pos[0] + 1
             for ln in r:
-                self.draw_text(ln, menu_left, menu_w,
-                               self.cmp_menu[ln - start + self.cmp_scroll],
-                               "completion" if ln - start + self.cmp_scroll != self.cmp_select else 'completion_selected',
-                               self.prio + 1)
+                draw_text(self, ln, menu_left, menu_w,
+                          self.cmp_menu[ln - start + self.cmp_scroll],
+                          "completion" if ln - start + self.cmp_scroll != self.cmp_select else 'completion_selected',
+                          self.prio + 1)
 
         # self.editor.debug_points.extend([(self.top, self.left),
         #                                  (self.top + self.h - 1, self.left + self.w - 1)])
-
-    def reopen(self):
-        assert self.file
-        with open(self.file, "r", encoding="utf-8") as f:
-            text = f.read()
-        self.textinputer.clear()
-        self.textinputer.insert(0, 0, text)
-        self.y = self.ideal_x = self.x = 0
-        self.textinputer.save()
-        self.renderer = get_renderer(get_file_ext(self.file))(self.text)
-
-    def open_file(self, arg: str, force=False):
-        arg = arg.strip()
-        old = self.file
-        if not arg:
-            if self.file and force and not self.textinputer.is_saved() and os.path.exists(self.file):
-                self.reopen()
-            return
-        if arg:
-            if self.file and os.path.abspath(self.file) == os.path.abspath(arg):
-                if force and not self.textinputer.is_saved() and os.path.exists(self.file):
-                    self.reopen()
-                return
-            self.file = arg
-        if self.file and (path := os.path.abspath(self.file)) in self.editor.fb_maps\
-                and self.editor.fb_maps[path]:
-            # 大换血啊（
-            #
-            model = self.editor.fb_maps[path].pop()
-            self.editor.fb_maps[path].add(model)
-            self.textinputer = model.textinputer
-            self.renderer = model.renderer
-            self.drawer.text = self.textinputer.text
-            self.text = self.textinputer.text
-        elif self.file:
-            if not os.path.exists(self.file):
-                self.textinputer.clear()
-                self.y = self.ideal_x = self.x = 0
-                self.textinputer.save()
-                self.renderer = get_renderer(get_file_ext(self.file))(self.text)
-            else:
-                with open(self.file, "r", encoding="utf-8") as f:
-                    text = f.read()
-                self.textinputer.clear()
-                self.textinputer.insert(0, 0, text)
-                self.y = self.ideal_x = self.x = 0
-                self.textinputer.save()
-                self.renderer = get_renderer(get_file_ext(self.file))(self.text)
-        if old is not None:
-            self.editor.fb_maps[os.path.abspath(old)].remove(self)
-        if self.file is not None:
-            if os.path.abspath(self.file) not in self.editor.fb_maps:
-                self.editor.fb_maps[os.path.abspath(self.file)] = set()
-            self.editor.fb_maps[os.path.abspath(self.file)].add(self)
-
-    def save_file(self, arg: str):
-        if not (arg == "" and self.file is None):
-            if arg:
-                old_file = self.file
-                self.file = arg
-            else:
-                old_file = self.file
-            if isinstance(self.file, str):
-                try:
-                    with open(self.file, "w", encoding="utf-8") as f:
-                        f.write("\n".join(self.text))
-                    self.textinputer.save()
-                    if not old_file or get_file_ext(self.file) != get_file_ext(old_file):
-                        self.renderer = get_renderer(get_file_ext(self.file))(self.text)
-                except:
-                    self.file = old_file
-            if old_file is not None and old_file != self.file and os.path.exists(old_file):
-                if os.path.abspath(old_file) in self.editor.fb_maps:
-                    self.editor.fb_maps[os.path.abspath(old_file)].pop()
-                if self.file is not None:
-                    self.editor.fb_maps[os.path.abspath(self.file)].add(self)
 
 
 # Debug神器
@@ -761,6 +959,20 @@ class Split(Window):
         self.sp_tp, self.sp_pos = sp_tp, sp_pos
         self.win1: Window
         self.win2: Window
+
+    def revert(self):
+        win1size = self.win1.h, self.win1.w
+        win2size = self.win2.h, self.win2.w
+        win1pos = self.win1.top, self.win1.left
+        win2pos = self.win2.top, self.win2.left
+        self.win1.resize(*win2size)
+        self.win2.resize(*win1size)
+        self.win1.move(*win2pos)
+        self.win2.move(*win1pos)
+        self.win1.parent = self, True
+        self.win2.parent = self, False
+        self.win1, self.win2 = self.win2, self.win1
+        self.sp_pos = self.win1.h if self.sp_tp == HSplit else self.win1.w + 1
 
     def change_pos(self, pos: int, ignore_id=-1):
         if self.sp_tp == VSplit:
@@ -846,13 +1058,13 @@ class Split(Window):
 class Editor:
     def __init__(self, h: int, w: int):
         self.win_ids = {}
-        self.fb_maps: dict[str, set[Buffer]] = {}
+        self.fb_maps: dict[str, set[FileBase]] = {}
         self.h, self.w = h, w
         self.screen = Screen(self.h, self.w)
         self.theme = Theme(default_theme)
         self.linum = True
         self.async_update_size = False
-        self.cur: Buffer = Buffer(0, 0, self.h - 1, self.w, self, None)
+        self.cur: Buffer = TextBuffer(0, 0, self.h - 1, self.w, self, None)
         self.gwin: Window = self.cur
         self.running = False
         self.cur_key: str = ""
@@ -895,6 +1107,7 @@ class Editor:
             "sg": self.accept_cmd_goto_by_id,
             "wh": self.accept_cmd_resize_h,
             "ww": self.accept_cmd_resize_w,
+            "tree": self.open_explorer,
         }
         self.mode: None | str = None  # BufferHold/EditorHold
         self.cur_cmd = ""
@@ -903,17 +1116,26 @@ class Editor:
 
         self.debug_points: list[tuple[int, int]] = []
 
+        self.winmove_seq: list[int] = [self.cur.id]
+
         # self.gwin.split(True, TextWindow, "Debug Window")
         # self.debug_win: TextWindow = self.gwin.win2
         # self.gwin.change_pos(self.w // 4 * 3)
 
+    def remove_id(self, id: int):
+        del self.win_ids[id]
+        self.winmove_seq = list(filter(lambda x: x != id, self.winmove_seq))
+
     def get_mode(self):
-        if not self.mode:
+        if not self.mode and isinstance(self.cur, BufferBase):
             return self.cur.mode
+        if not self.mode:
+            return "NORMAL"
         return self.mode
 
     def mode_normal(self):
         self.cur.mode_normal()
+        self.mode = None
         self.cur_cmd = ""
         self.cmd_pos = 0
 
@@ -992,6 +1214,12 @@ class Editor:
                 self.cur.resize_bottomup(self.cur.h, int(arg))
         except:
             pass
+
+    def open_explorer(self, arg: str):
+        self.gwin.split(VSplit, FileExplorer)
+        if isinstance(self.gwin, Split):
+            self.gwin.revert()
+            self.gwin.win1.resize_bottomup(self.gwin.win1.h, max(30, self.w // 5))
 
     def key_winmove_right(self, *_):
         if (win := self.cur.find_right(self.cur.cursor_real_pos()[0])):
@@ -1189,9 +1417,9 @@ class Editor:
         need_cmp = False
 
         while self.running:
-            if need_cmp:
+            if need_cmp and isinstance(self.cur, TextBuffer):
                 self.cur.fill_cmp_menu()
-            else:
+            elif isinstance(self.cur, TextBuffer):
                 self.cur.clear_cmp_menu()
             self.draw()
 
@@ -1211,8 +1439,12 @@ class Editor:
                     if len(keys) == 1 and keys[0] not in ("<C-n>", "<C-p>", "<tab>", "<bs>"):
                         need_cmp = False
             elif mode == "INSERT" and len(keyseq) == len(keyseq[0]) == 1:
-                self.cur.insert(keyseq[0])
-                need_cmp = True
+                if isinstance(self.cur, TextBuffer):
+                    self.cur.insert(keyseq[0])
+                    need_cmp = True
             elif mode == "COMMAND" and len(keyseq) == len(keyseq[0]) == 1:
                 self.cmd_insert(keyseq[0])
                 need_cmp = False
+
+            if not self.winmove_seq or self.cur != self.winmove_seq[-1]:
+                self.winmove_seq.append(self.cur.id)

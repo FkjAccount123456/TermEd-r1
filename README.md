@@ -24,11 +24,12 @@ python3 ./termed.py ./file.py  # open a file
 - Vim-like model editing
 - Python highlighting
 - Word completion (experimental)
+- Linux support
+- File explorer (experimental, primary)
 # Todo List
 - Floating window
 - Auto indent
 - Builtin configuration language
-- File explorer
 - GUI
 - Tree-sitter integration
 - CTags integration
