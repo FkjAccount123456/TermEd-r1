@@ -24,9 +24,20 @@ class Screen:
         if prio < self.prio[y][x]:
             return
         if self.data[y][x] != ch or self.color[y][x] != color:
-            self.changed.add((y, x))
-            self.data[y][x] = ch
-            self.color[y][x] = color
+            if ch == '\t':
+                for i in range(0, TAB_WIDTH):
+                    self.changed.add((y, x + i))
+                    self.data[y][x + i] = " "
+                    self.color[y][x + i] = color
+            else:
+                width = get_width(ch)
+                self.changed.add((y, x))
+                self.data[y][x] = ch
+                self.color[y][x] = color
+                for i in range(1, width):
+                    self.changed.add((y, x + i))
+                    self.data[y][x + i] = ""
+                    self.color[y][x + i] = color
         self.prio[y][x] = prio
 
     def fill(self, ch: str, color: str):

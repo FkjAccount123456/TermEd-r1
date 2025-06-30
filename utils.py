@@ -6,6 +6,9 @@ from select import select
 from typing import Any
 
 
+TAB_WIDTH = 4
+
+
 if sys.platform == "win32":
     import msvcrt
 
@@ -83,7 +86,7 @@ widths = [
     (120831, 1), (262141, 2), (1114109, 1),
 ]
 
-widthlist = {}
+widthlist = { 9: TAB_WIDTH }
 
 
 def get_width(o):
@@ -93,16 +96,13 @@ def get_width(o):
     o = ord(o)
     if o in widthlist:
         return widthlist[o]
+    if o == 0xe or o == 0xf:
+        widthlist[o] = 0
+        return 0
     for num, wid in widths:
         if o <= num:
             widthlist[o] = wid
             return wid
-    if o == 0xe or o == 0xf:
-        widthlist[o] = 0
-        return 0
-    if o == 0x9:
-        widthlist[o] = 8
-        return 8
     widthlist[o] = 1
     return 1
 

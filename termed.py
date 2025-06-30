@@ -5,6 +5,7 @@ try:
     from os import get_terminal_size
     import sys
     from renderers.renderers import finalize
+    from editor import TextBuffer
 
     if sys.platform == "win32":
         import ctypes
@@ -14,7 +15,8 @@ try:
 
     editor = editor.Editor(get_terminal_size().lines, get_terminal_size().columns)
     if len(sys.argv) > 1:
-        editor.cur.open_file(sys.argv[1])
+        if isinstance(editor.cur, TextBuffer):
+            editor.cur.open_file(sys.argv[1])
     editor.mainloop()
 
     clear()

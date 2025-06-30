@@ -32,10 +32,7 @@ def draw_text(self: "Window", top: int, left: int, width: int, text: str, tp: st
         if shw + cur_width > width:
             break
         self.editor.screen.change(top, left + shw, ch, color, prio)
-        shw += 1
-        for _ in range(1, cur_width):
-            self.editor.screen.change(top, left + shw, "", color, prio)
-            shw += 1
+        shw += cur_width
     while shw < width:
         self.editor.screen.change(top, left + shw, " ", color, prio)
         shw += 1
@@ -47,6 +44,9 @@ class FileBase(BufferBase):
         self.editor = editor
 
     def reset_drawer(self):
+        ...
+
+    def reset_scroll(self):
         ...
 
     def reopen(self):
@@ -94,6 +94,7 @@ class FileBase(BufferBase):
                 self.textinputer.clear()
                 self.textinputer.insert(0, 0, text)
                 self.y = self.ideal_x = self.x = 0
+                self.reset_scroll()
                 self.textinputer.save()
                 self.renderer = get_renderer(get_file_ext(self.file))(self.text)
         if old is not None:
@@ -420,7 +421,7 @@ class FileExplorer(Buffer):
         res = []
         for i in tree:
             if len(i) == 3:
-                res.append(('  ' * level + '~ ' + i[0], i[1]))
+                res.append(('  ' * level + ('~ ' if i[1] in self.expanded else '+ ') + i[0], i[1]))
                 res.extend(self.gen_buffer(i[2], level + 1))
             else:
                 res.append(('  ' + '  ' * level + i[0], i[1]))
@@ -681,6 +682,9 @@ class TextBuffer(Buffer, FileBase):
     def reset_drawer(self):
         self.drawer.text = self.textinputer.text
 
+    def reset_scroll(self):
+        self.drawer.scry = 0
+
     def mode_select(self, *_):
         self.mode = "VISUAL"
         self.editor.mode = None
@@ -937,11 +941,7 @@ class deprecated_TextWindow(Window):
         for ch in modeline:
             self.editor.screen.change(self.top + self.h - 1, self.left + shw, ch,
                                       self.editor.theme.get("modeline", False))
-            shw += 1
-            for _ in range(1, get_width(ch)):
-                self.editor.screen.change(self.top + self.h - 1, self.left + shw, " ",
-                                          self.editor.theme.get("modeline", False))
-                shw += 1
+            shw += get_width(ch)
         while shw < self.w:
             self.editor.screen.change(self.top + self.h - 1, self.left + shw, " ",
                                       self.editor.theme.get("modeline", False))

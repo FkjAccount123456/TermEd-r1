@@ -170,11 +170,7 @@ class Drawer:
                     color = self.theme.get(render.get(cy, i), insel)
                     self.screen.change(self.top + scrcnt, self.left + cursh,
                                     (ch := self.text[cy][i]), color, self.prio)
-                    cursh += 1
-                    for _ in range(get_width(ch) - 1):
-                        self.screen.change(self.top + scrcnt, self.left + cursh,
-                                        "", color, self.prio)
-                        cursh += 1
+                    cursh += get_width(ch)
 
             if i is not None:
                 i += 1
