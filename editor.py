@@ -1,7 +1,7 @@
-from typing import Callable
+from typing import Callable, NamedTuple
 from renderer import Theme, default_theme
 from renderers.renderers import get_renderer
-from screen import Screen
+from screen import Screen, VScreen
 from utils import ed_getch, flush, get_char_type, get_file_ext, get_width
 from drawer import Drawer
 from threading import Thread
@@ -127,7 +127,59 @@ class FileBase(BufferBase):
                     self.editor.fb_maps[os.path.abspath(self.file)].add(self)
 
 
-class Window:
+class WindowLike:
+    def __init__(self):
+        self.floatwins: list[FloatWin] = []
+
+    def get_prio(self):
+        return PrioBuffer
+
+    def draw(self):
+        for win in self.floatwins:
+            win.draw()
+
+
+class FloatWinFeatures(NamedTuple):
+    border: bool = True
+
+
+class FloatWin(WindowLike):
+    def __init__(self, top: int, left: int, h: int, w: int,
+                 editor: "Editor", parent: WindowLike | None,
+                 features: FloatWinFeatures | None = None):
+        self.top, self.left, self.h, self.w = top, left, h, w
+        self.editor = editor
+        self.parent = parent
+        self.id = self.editor.alloc_id(self)
+        self.features = features if features else FloatWinFeatures()
+        self.v_screen = VScreen(self.top + self.features.border, self.left + self.features.border,
+                                self.h - self.features.border * 2, self.w - self.features.border * 2,
+                                self.editor.screen, self.get_prio())
+
+    def set_features(self, features: FloatWinFeatures):
+        self.features = features
+
+    def get_prio(self):
+        if self.parent:
+            return self.parent.get_prio() + 1
+        return PrioBuffer
+
+    def draw(self):
+        super().draw()
+        if self.features.border:
+            self.v_screen.change(0, 0, "+", self.editor.theme.get("border", False))
+            self.v_screen.change(self.h - 1, 0, "+", self.editor.theme.get("border", False))
+            self.v_screen.change(0, self.w - 1, "+", self.editor.theme.get("border", False))
+            self.v_screen.change(self.h - 1, self.w - 1, "+", self.editor.theme.get("border", False))
+            for i in range(self.top + 1, self.top + self.h - 1):
+                self.v_screen.change(i, self.left, "|", self.editor.theme.get("border", False))
+                self.v_screen.change(i, self.left + self.w - 1, "|", self.editor.theme.get("border", False))
+            for i in range(self.left + 1, self.left + self.w - 1):
+                self.v_screen.change(self.top, i, "-", self.editor.theme.get("border", False))
+                self.v_screen.change(self.top + self.h - 1, i, "-", self.editor.theme.get("border", False))
+
+
+class Window(WindowLike):
     def __init__(self, top: int, left: int, h: int, w: int,
                  editor: "Editor", parent: "tuple[Split, bool] | None"):
         self.top, self.left, self.h, self.w = top, left, h, w
@@ -245,9 +297,6 @@ class Window:
         return self.win1.find_down_buffer(w)
 
     def move(self, top: int, left: int):
-        ...
-
-    def draw(self):
         ...
 
     # 新窗口在右下
@@ -445,6 +494,7 @@ class FileExplorer(Buffer):
         self.update()
 
     def draw(self):
+        super().draw()
         self.scroll_buffer(self.y)
         if self.buffer:
             for i in range(0, self.h - 1):
@@ -678,7 +728,7 @@ class TextBuffer(Buffer, FileBase):
                 "w": lambda *n: fn_in(self.get_range_cur_word, *n),
             },
         }
-    
+
     def reset_drawer(self):
         self.drawer.text = self.textinputer.text
 
@@ -851,6 +901,7 @@ class TextBuffer(Buffer, FileBase):
         return cursor[0] + self.top, cursor[1] + self.left
 
     def draw(self):
+        Buffer.draw(self)
         self.drawer.scroll_buffer(self.y, self.x)
         if not self.editor.mode and self.mode == "VISUAL":
             if (self.y, self.x) < (self.sely, self.selx):
@@ -1047,6 +1098,7 @@ class Split(Window):
         self.top, self.left = top, left
 
     def draw(self):
+        super().draw()
         self.win1.draw()
         self.win2.draw()
         if self.sp_tp == VSplit:
@@ -1276,7 +1328,7 @@ class Editor:
     def quit_editor(self, *_):
         self.running = False
 
-    def alloc_id(self, win: Window):
+    def alloc_id(self, win: WindowLike):
         new_id = 1
         while new_id in self.win_ids:
             new_id += 1

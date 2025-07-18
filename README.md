@@ -5,10 +5,11 @@ TermEd, short for Terminal Editor, is an editor with unicode support, window spl
 ``` bash
 git clone https://github.com/FkjAccount123456/TermEd.git
 ```
-- Compile C Highlighting Library (only an example, replace ”gcc“ with the C Compiler you use)
+- Compile C Libraries (only for highlighting currently)
 ``` bash
 cd TermEd/
-gcc -fPIC -shared ./renderers/libpyhl.c -o ./renderers/libpyhl.so
+python3 ./build.py  # use gcc as default
+python3 ./build.py clang  # specific C compiler
 ```
 - Run the editor
 ``` bash

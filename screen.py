@@ -91,3 +91,21 @@ class Screen:
             print("\033[0m", end="")
 
         self.prio = [[0 for i in range(self.w)] for j in range(self.h)]
+
+
+class VScreen:
+    def __init__(self, top: int, left: int, h: int, w: int, screen: Screen, prio: int):
+        self.top, self.left, self.h, self.w = top, left, h, w
+        self.screen = screen
+        self.prio = prio
+
+    def change(self, y: int, x: int, ch: str, color: str):
+        self.screen.change(self.top + y, self.left + x, ch, color, self.prio)
+
+    def fill(self, ch: str, color: str):
+        for y in range(self.h):
+            for x in range(self.w):
+                self.screen.change(self.top + y, self.left + x, ch, color, self.prio)
+
+    def set_cursor(self, y: int, x: int):
+        self.screen.set_cursor(self.top + y, self.left + x)

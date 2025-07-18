@@ -51,7 +51,7 @@ class Renderer:
 
     def get(self, y: int, x: int) -> str:
         return "text"
-    
+
     def clear(self):
         self.change_points = []
         self.states = [[]]
@@ -113,6 +113,7 @@ onedark_theme = {
     "modeline": (0x3E4452, 0xABB2BF),
     "completion": (0x282C34, 0xABB2BF),
     "completion_selected": (0x3E4452, 0xABB2BF),
+    "border": (0x282C34, 0xABB2BF),
 }
 
 default_theme = onedark_theme
