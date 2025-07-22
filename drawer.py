@@ -44,6 +44,8 @@ class Drawer:
         w = 0
         h = 1
         for i in rg:
+            # if i >= len(line):
+            #     return h, w
             ch_w = get_width(line[i])
             if w + ch_w > self.w:
                 h += 1

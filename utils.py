@@ -2,7 +2,6 @@ import os
 import time
 import sys
 import copy
-from select import select
 from typing import Any
 
 

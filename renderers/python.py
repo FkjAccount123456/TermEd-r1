@@ -459,13 +459,13 @@ class PythonRenderer(Renderer):
         # print(ord(self.buf.data[y].data[x]), y, x, end=' ')
         # print(pyTokDict[ord(self.buf.data[y].data[x])])
         return pyTokDict[ord(self.buf.data[y].data[x])]
-    
+
     def __del__(self):
         libpyhl.PyHLRes_free(self.buf)
 
-    def insert(self, *_): ...
+    def insert(self, y: int, x: int, text: str): ...
 
-    def delete(self, *_): ...
+    def delete(self, y: int, x: int, q: int, p: int): ...
 
     def clear(self): ...
 

@@ -1,4 +1,4 @@
-TermEd, short for Terminal Editor, is an editor with unicode support, window spliting, and code highlighting (only available for python currently).  
+TermEd, short for Terminal Editor, is an editor with unicode support, window spliting, and code highlighting (only available for python currently).
 (It is only a project for fun, whose quality is not ensured.)
 # Usage
 - Clone the repo
@@ -9,7 +9,7 @@ git clone https://github.com/FkjAccount123456/TermEd.git
 ``` bash
 cd TermEd/
 python3 ./build.py  # use gcc as default
-python3 ./build.py clang  # specific C compiler
+python3 ./build.py clang  # specify C compiler
 ```
 - Run the editor
 ``` bash
@@ -27,8 +27,8 @@ python3 ./termed.py ./file.py  # open a file
 - Word completion (experimental)
 - Linux support
 - File explorer (experimental, primary)
-# Todo List
 - Floating window
+# Todo List
 - Auto indent
 - Builtin configuration language
 - GUI
@@ -40,3 +40,4 @@ You can see them in ```./pics/```
 
 ![](/pics/微信截图_20250501094850.png "Editing python file")
 ![](/pics/微信截图_20250429211040.png "Splited to many windows")
+![](/pics/屏幕截图_20250722_114845.png "Using file explorer")

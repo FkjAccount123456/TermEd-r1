@@ -23,7 +23,7 @@ PrioBuffer = 0
 
 # 又是可恶的徒手绘图（
 # 要不然封装一下吧
-def draw_text(self: "Window", top: int, left: int, width: int, text: str, tp: str, prio=0):
+def draw_text(self: "WindowLike", top: int, left: int, width: int, text: str, tp: str, prio=0):
     # print(f"draw_text{(type(self).__name__, top, left, width, len(text), tp, prio)}")
     shw = 0
     color = self.editor.theme.get(tp, False)
@@ -130,6 +130,7 @@ class FileBase(BufferBase):
 class WindowLike:
     def __init__(self):
         self.floatwins: list[FloatWin] = []
+        self.editor: Editor
 
     def get_prio(self):
         return PrioBuffer
@@ -147,6 +148,7 @@ class FloatWin(WindowLike):
     def __init__(self, top: int, left: int, h: int, w: int,
                  editor: "Editor", parent: WindowLike | None,
                  features: FloatWinFeatures | None = None):
+        super().__init__()
         self.top, self.left, self.h, self.w = top, left, h, w
         self.editor = editor
         self.parent = parent
@@ -155,6 +157,17 @@ class FloatWin(WindowLike):
         self.v_screen = VScreen(self.top + self.features.border, self.left + self.features.border,
                                 self.h - self.features.border * 2, self.w - self.features.border * 2,
                                 self.editor.screen, self.get_prio())
+        self.hide = False
+
+    def resize(self, h: int, w: int):
+        self.h, self.w = h, w
+        self.v_screen.h = self.h - self.features.border * 2
+        self.v_screen.w = self.w - self.features.border * 2
+
+    def move(self, top: int, left: int):
+        self.top, self.left = top, left
+        self.v_screen.top = self.top + self.features.border
+        self.v_screen.left = self.left + self.features.border
 
     def set_features(self, features: FloatWinFeatures):
         self.features = features
@@ -164,24 +177,34 @@ class FloatWin(WindowLike):
             return self.parent.get_prio() + 1
         return PrioBuffer
 
+    def draw_text(self, top: int, left: int, text: str, tp: str):
+        draw_text(self, self.v_screen.top + top, self.v_screen.left + left, self.v_screen.w,
+                  text, tp)
+
+    def fill_screen(self):
+        self.v_screen.fill(" ", self.editor.theme.get("text", False))
+
     def draw(self):
+        if self.hide:
+            return
         super().draw()
         if self.features.border:
-            self.v_screen.change(0, 0, "+", self.editor.theme.get("border", False))
-            self.v_screen.change(self.h - 1, 0, "+", self.editor.theme.get("border", False))
-            self.v_screen.change(0, self.w - 1, "+", self.editor.theme.get("border", False))
-            self.v_screen.change(self.h - 1, self.w - 1, "+", self.editor.theme.get("border", False))
-            for i in range(self.top + 1, self.top + self.h - 1):
-                self.v_screen.change(i, self.left, "|", self.editor.theme.get("border", False))
-                self.v_screen.change(i, self.left + self.w - 1, "|", self.editor.theme.get("border", False))
-            for i in range(self.left + 1, self.left + self.w - 1):
-                self.v_screen.change(self.top, i, "-", self.editor.theme.get("border", False))
-                self.v_screen.change(self.top + self.h - 1, i, "-", self.editor.theme.get("border", False))
+            self.v_screen.change(-1, -1, "+", self.editor.theme.get("border", False))
+            self.v_screen.change(self.h - 2, -1, "+", self.editor.theme.get("border", False))
+            self.v_screen.change(-1, self.w - 2, "+", self.editor.theme.get("border", False))
+            self.v_screen.change(self.h - 2, self.w - 2, "+", self.editor.theme.get("border", False))
+            for i in range(self.h - 2):
+                self.v_screen.change(i, -1, "|", self.editor.theme.get("border", False))
+                self.v_screen.change(i, self.w - 2, "|", self.editor.theme.get("border", False))
+            for i in range(self.w - 2):
+                self.v_screen.change(-1, i, "-", self.editor.theme.get("border", False))
+                self.v_screen.change(self.h - 2, i, "-", self.editor.theme.get("border", False))
 
 
 class Window(WindowLike):
     def __init__(self, top: int, left: int, h: int, w: int,
                  editor: "Editor", parent: "tuple[Split, bool] | None"):
+        super().__init__()
         self.top, self.left, self.h, self.w = top, left, h, w
         self.editor, self.parent = editor, parent
         self.id = self.editor.alloc_id(self)
@@ -451,9 +474,20 @@ class FileExplorer(Buffer):
         if os.path.abspath(os.path.join(self.root, os.pardir)) != self.root:
             self.change_root(os.path.abspath(os.path.join(self.root, os.pardir)))
 
+    def sort_dir(self, path: str):
+        dirs = []
+        files = []
+        for name in sorted(os.listdir(path)):
+            full_path = os.path.join(path, name)
+            if os.path.isdir(full_path):
+                dirs.append(name)
+            else:
+                files.append(name)
+        return dirs + files
+
     def build_tree(self, path: str):
         tree = []
-        for name in sorted(os.listdir(path)):
+        for name in self.sort_dir(path):
             full_path = os.path.join(path, name)
             if os.path.isdir(full_path):
                 if full_path not in self.expanded:
@@ -527,6 +561,8 @@ class TextBuffer(Buffer, FileBase):
         # 2025-4-30
         # 仅实验性功能，不确定是否长期保留
         # 但确实好写，所以先写了（
+        # 2025-7-21
+        # 前端改用FloatWin实现
         self.cmp_menu: list[str] = []
         self.cmp_func: list[Callable] = []
         self.cmp_select = -1
@@ -534,6 +570,9 @@ class TextBuffer(Buffer, FileBase):
         self.cmp_maxshow = 10
         self.cmp_maxwidth = 50
         self.cmp_minwidth = 10
+        self.cmp_win = FloatWin(0, 0, self.cmp_maxshow, self.cmp_maxwidth,
+                                self.editor, self, FloatWinFeatures(border=False))
+        self.floatwins.append(self.cmp_win)
 
         self.read_callback: Callable | None = None
 
@@ -901,7 +940,6 @@ class TextBuffer(Buffer, FileBase):
         return cursor[0] + self.top, cursor[1] + self.left
 
     def draw(self):
-        Buffer.draw(self)
         self.drawer.scroll_buffer(self.y, self.x)
         if not self.editor.mode and self.mode == "VISUAL":
             if (self.y, self.x) < (self.sely, self.selx):
@@ -939,19 +977,30 @@ class TextBuffer(Buffer, FileBase):
             else:
                 menu_left = cursor_real_pos[1] + 1
             if menu_dir:  # 光标之上
-                r = range(cursor_real_pos[0] - menu_h, cursor_real_pos[0])
-                start = cursor_real_pos[0] - menu_h
+                self.cmp_win.move(cursor_real_pos[0] - menu_h, menu_left)
+                # r = range(cursor_real_pos[0] - menu_h, cursor_real_pos[0])
+                # start = cursor_real_pos[0] - menu_h
             else:         # 光标之下
-                r = range(cursor_real_pos[0] + 1, cursor_real_pos[0] + 1 + menu_h)
-                start = cursor_real_pos[0] + 1
-            for ln in r:
-                draw_text(self, ln, menu_left, menu_w,
-                          self.cmp_menu[ln - start + self.cmp_scroll],
-                          "completion" if ln - start + self.cmp_scroll != self.cmp_select else 'completion_selected',
-                          self.prio + 1)
+                self.cmp_win.move(cursor_real_pos[0] + 1, menu_left)
+                # r = range(cursor_real_pos[0] + 1, cursor_real_pos[0] + 1 + menu_h)
+                # start = cursor_real_pos[0] + 1
+            self.cmp_win.resize(menu_h, menu_w)
+            # for ln in r:
+            #     draw_text(self, ln, menu_left, menu_w,
+            #               self.cmp_menu[ln - start + self.cmp_scroll],
+            #               "completion" if ln - start + self.cmp_scroll != self.cmp_select else 'completion_selected',
+            #               self.prio + 1)
+            for i in range(menu_h):
+                self.cmp_win.draw_text(i, 0,
+                                       self.cmp_menu[i + self.cmp_scroll] if i + self.cmp_scroll < len(self.cmp_menu) else "",
+                                       "completion" if i + self.cmp_scroll != self.cmp_select else 'completion_selected')
+        else:
+            self.cmp_win.hide = True
 
         # self.editor.debug_points.extend([(self.top, self.left),
         #                                  (self.top + self.h - 1, self.left + self.w - 1)])
+
+        Buffer.draw(self)
 
 
 # Debug神器
@@ -1173,6 +1222,8 @@ class Editor:
         # self.gwin.split(True, TextWindow, "Debug Window")
         # self.debug_win: TextWindow = self.gwin.win2
         # self.gwin.change_pos(self.w // 4 * 3)
+
+        # self.gwin.floatwins.append(FloatWin(5, 10, 5, 5, self, self.gwin))
 
     def remove_id(self, id: int):
         del self.win_ids[id]

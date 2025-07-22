@@ -139,6 +139,8 @@ class BufferBase:
                 self.textinputer.delete(self.y, 0, self.y, len(self.text[self.y]))
             else:
                 break
+        self.x = min(len(self.text[self.y]), self.x)
+        self.ideal_x = self.x
 
     def key_yank_line(self, n=1):
         res = "\n".join(self.text[self.y: self.y + n])

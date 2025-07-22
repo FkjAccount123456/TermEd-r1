@@ -1,6 +1,7 @@
 #include <ctype.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <wchar.h>
@@ -322,18 +323,19 @@ bool _find_after(wchar_t *cur, wchar_t ch, size_t *braclv) {
   return *cur == ch;
 }
 
-#define is_camelcase(id)                                                       \
-  ({                                                                           \
-    bool is_camel = true, has_lc = false;                                      \
-    if (!('A' <= id[0] && id[0] <= 'Z'))                                       \
-      is_camel = false;                                                        \
-    for (size_t j = 1; j < idlen && is_camel; j++)                             \
-      if ('a' <= id[j] && id[j] <= 'z')                                        \
-        has_lc = true;                                                         \
-      else if (id[j] != '_')                                                   \
-        is_camel = false;                                                      \
-    is_camel = is_camel && has_lc;                                             \
-  })
+bool is_camelcase(wchar_t *id, size_t idlen) {
+  bool has_lc = false;
+  if (!('A' <= id[0] && id[0] <= 'Z'))
+    return false;
+  for (size_t j = 1; j < idlen; j++) {
+    if ('a' <= id[j] && id[j] <= 'z') {
+      has_lc = true;
+    } else if (id[j] == '_') {
+      return false;
+    }
+  }
+  return has_lc;
+}
 
 typedef enum PyTok : char {
   Unknown = -1,
@@ -431,7 +433,7 @@ PyHLRes render(wchar_t *s, size_t len) {
         tp = Func;
       } else if (after_dot) {
         if (find_after('(')) {
-          if (is_camelcase(id)) {
+          if (is_camelcase(id, idlen)) {
             tp = Class;
           } else {
             tp = Func;
@@ -444,7 +446,7 @@ PyHLRes render(wchar_t *s, size_t len) {
       } else if (contains(pyFuncSet, id, idlen)) {
         tp = Func;
       } else if (find_after('(')) {
-        if (is_camelcase(id)) {
+        if (is_camelcase(id, idlen)) {
           tp = Class;
         } else {
           tp = Func;

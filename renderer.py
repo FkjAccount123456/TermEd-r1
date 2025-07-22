@@ -111,7 +111,7 @@ onedark_theme = {
     "param": (0x282C34, 0xD19A66),
     "error": (0xFF0000, 0xABB2BF),
     "modeline": (0x3E4452, 0xABB2BF),
-    "completion": (0x282C34, 0xABB2BF),
+    "completion": (0x242830, 0xABB2BF),
     "completion_selected": (0x3E4452, 0xABB2BF),
     "border": (0x282C34, 0xABB2BF),
 }
