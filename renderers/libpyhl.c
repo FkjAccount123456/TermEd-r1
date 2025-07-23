@@ -81,6 +81,8 @@ void IdSet_free(IdSet *set) {
 bool is_init = false;
 IdSet *pyKwSet, *pySoftKwSet, *pySelfSet, *pyConstSet;
 IdSet *pyOpSet, *pyFuncSet, *pyClassSet;
+IdSet *pyOpKwSet, *pyExceptionKwSet, *pyRepeatKwSet;
+IdSet *pyCoroutineKwSet, *pyCondKwSet, *pyReturnKwSet;
 
 // 令人联想到betterlang函数注册壮观场景
 // 不过这个是生成的
@@ -95,6 +97,12 @@ void init() {
   pyOpSet = IdSet_new();
   pyFuncSet = IdSet_new();
   pyClassSet = IdSet_new();
+  pyOpKwSet = IdSet_new();
+  pyExceptionKwSet = IdSet_new();
+  pyRepeatKwSet = IdSet_new();
+  pyCoroutineKwSet = IdSet_new();
+  pyCondKwSet = IdSet_new();
+  pyReturnKwSet = IdSet_new();
   // pyKwSet
   IdSet_insert(pyKwSet, "if");
   IdSet_insert(pyKwSet, "is");
@@ -305,6 +313,38 @@ void init() {
   IdSet_insert(pyClassSet, "ZeroDivisionError");
   IdSet_insert(pyClassSet, "BrokenPipeError");
   IdSet_insert(pyClassSet, "TimeoutError");
+
+  // pyOpKwSet
+  IdSet_insert(pyOpKwSet, "in");
+  IdSet_insert(pyOpKwSet, "and");
+  IdSet_insert(pyOpKwSet, "not");
+  IdSet_insert(pyOpKwSet, "or");
+  IdSet_insert(pyOpKwSet, "is");
+
+  // pyExceptionKwSet
+  IdSet_insert(pyExceptionKwSet, "except");
+  IdSet_insert(pyExceptionKwSet, "finally");
+  IdSet_insert(pyExceptionKwSet, "raise");
+  IdSet_insert(pyExceptionKwSet, "try");
+
+  //  pyRepeatKwSet
+  IdSet_insert(pyRepeatKwSet, "for");
+  IdSet_insert(pyRepeatKwSet, "while");
+  IdSet_insert(pyRepeatKwSet, "break");
+  IdSet_insert(pyRepeatKwSet, "continue");
+
+  // pyCoroutineKwSet
+  IdSet_insert(pyCoroutineKwSet, "async");
+  IdSet_insert(pyCoroutineKwSet, "await");
+
+  // pyCondKwSet
+  IdSet_insert(pyCondKwSet, "if");
+  IdSet_insert(pyCondKwSet, "elif");
+  IdSet_insert(pyCondKwSet, "else");
+
+  // pyReturnKwSet
+  IdSet_insert(pyReturnKwSet, "return");
+  IdSet_insert(pyReturnKwSet, "yield");
 }
 
 #define find_after(ch) _find_after(s + i, ch, braclv)
@@ -354,6 +394,15 @@ typedef enum PyTok : char {
   Param = 12,
   Escape = 13,
   Error = 14,
+  ThisParam = 15,
+  KwFunc = 16,
+  KwClass = 17,
+  KwPreproc = 18,
+  KwCond = 19,
+  KwRepeat = 20,
+  KwReturn = 21,
+  KwCoroutine = 22,
+  KwException = 23,
 } PyTok;
 
 typedef enum TypeHintTp {
@@ -405,21 +454,41 @@ PyHLRes render(wchar_t *s, size_t len) {
       PyTok tp;
       if (contains(pyConstSet, id, idlen)) {
         tp = Const;
+      } else if (contains(pyOpKwSet, id, idlen)) {
+        tp = Op;
       } else if (contains(pyKwSet, id, idlen)) {
         tp = Keyword;
         if (idlen == 5 && !memcmp(id, L"class", 5 * sizeof(wchar_t)) &&
             !(braclv[0] + braclv[1] + braclv[2])) {
           after_class = true;
+          tp = KwClass;
         } else if (idlen == 3 && !memcmp(id, L"def", 3 * sizeof(wchar_t)) &&
                    !(braclv[0] + braclv[1] + braclv[2])) {
           after_def = true;
+          tp = KwFunc;
         } else if (idlen == 4 && !memcmp(id, L"from", 4 * sizeof(wchar_t)) &&
                    !(braclv[0] + braclv[1] + braclv[2])) {
           after_import = true;
+          tp = KwPreproc;
         } else if (idlen == 6 && !memcmp(id, L"import", 6 * sizeof(wchar_t)) &&
                    !(braclv[0] + braclv[1] + braclv[2])) {
           after_import = !after_import;
+          tp = KwPreproc;
+        } else if (idlen == 6 && !memcmp(id, L"lambda", 6 * sizeof(wchar_t))) {
+          tp = KwFunc;
+        } else if (contains(pyExceptionKwSet, id, idlen)) {
+          tp = KwException;
+        } else if (contains(pyRepeatKwSet, id, idlen)) {
+          tp = KwRepeat;
+        } else if (contains(pyCoroutineKwSet, id, idlen)) {
+          tp = KwCoroutine;
+        } else if (contains(pyCondKwSet, id, idlen)) {
+          tp = KwCond;
+        } else if (contains(pyReturnKwSet, id, idlen)) {
+          tp = KwReturn;
         }
+      } else if (contains(pySelfSet, id, idlen)) {
+        tp = ThisParam;
       } else if (find_after('=') && braclv[0]) {
         tp = Param;
       } else if (after_import) {
@@ -451,8 +520,6 @@ PyHLRes render(wchar_t *s, size_t len) {
         } else {
           tp = Func;
         }
-      } else if (contains(pySelfSet, id, idlen)) {
-        tp = Param;
       } else if (contains(pySoftKwSet, id, idlen)) {
         tp = Keyword;
       } else {

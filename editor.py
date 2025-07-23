@@ -7,7 +7,6 @@ from drawer import Drawer
 from threading import Thread
 from buffer import BufferBase
 from ederrors import *
-from utils import log
 import os
 
 
@@ -185,9 +184,9 @@ class FloatWin(WindowLike):
         self.v_screen.fill(" ", self.editor.theme.get("text", False))
 
     def draw(self):
+        super().draw()
         if self.hide:
             return
-        super().draw()
         if self.features.border:
             self.v_screen.change(-1, -1, "+", self.editor.theme.get("border", False))
             self.v_screen.change(self.h - 2, -1, "+", self.editor.theme.get("border", False))
@@ -570,8 +569,9 @@ class TextBuffer(Buffer, FileBase):
         self.cmp_maxshow = 10
         self.cmp_maxwidth = 50
         self.cmp_minwidth = 10
-        self.cmp_win = FloatWin(0, 0, self.cmp_maxshow, self.cmp_maxwidth,
-                                self.editor, self, FloatWinFeatures(border=False))
+        self.cmp_border = False
+        self.cmp_win = FloatWin(0, 0, self.cmp_maxshow + self.cmp_border * 2, self.cmp_maxwidth + self.cmp_border * 2,
+                                self.editor, self, FloatWinFeatures(border=self.cmp_border))
         self.floatwins.append(self.cmp_win)
 
         self.read_callback: Callable | None = None
@@ -921,11 +921,11 @@ class TextBuffer(Buffer, FileBase):
         return self
 
     def get_menu_height(self) -> tuple[int, bool]:
-        need_h = min(self.cmp_maxshow, len(self.cmp_menu))
+        need_h = min(self.cmp_maxshow, len(self.cmp_menu)) + self.cmp_border
         real_h = self.cursor_real_pos()[0]
         if self.editor.h - real_h - 1 < need_h and real_h > self.editor.h - real_h - 1:
-            return min(need_h, real_h), True
-        return min(need_h, self.editor.h - real_h - 1, need_h), False
+            return min(need_h - self.cmp_border, real_h), True
+        return min(need_h - self.cmp_border, self.editor.h - real_h - 1), False
 
     def set_menu_scroll(self, menu_h: int):
         cmp_select = max(self.cmp_select, 0)
@@ -984,7 +984,7 @@ class TextBuffer(Buffer, FileBase):
                 self.cmp_win.move(cursor_real_pos[0] + 1, menu_left)
                 # r = range(cursor_real_pos[0] + 1, cursor_real_pos[0] + 1 + menu_h)
                 # start = cursor_real_pos[0] + 1
-            self.cmp_win.resize(menu_h, menu_w)
+            self.cmp_win.resize(menu_h + self.cmp_border * 2, menu_w + self.cmp_border * 2)
             # for ln in r:
             #     draw_text(self, ln, menu_left, menu_w,
             #               self.cmp_menu[ln - start + self.cmp_scroll],
@@ -994,6 +994,7 @@ class TextBuffer(Buffer, FileBase):
                 self.cmp_win.draw_text(i, 0,
                                        self.cmp_menu[i + self.cmp_scroll] if i + self.cmp_scroll < len(self.cmp_menu) else "",
                                        "completion" if i + self.cmp_scroll != self.cmp_select else 'completion_selected')
+            self.cmp_win.hide = False
         else:
             self.cmp_win.hide = True
 

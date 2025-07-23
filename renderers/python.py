@@ -194,6 +194,15 @@ pyTokDict = [
     "param",
     "escape",
     "error",
+    "thisparam",
+    "kwfunc",
+    "kwclass",
+    "kwpreproc",
+    "kwcond",
+    "kwrepeat",
+    "kwreturn",
+    "kwcoroutine",
+    "kwexception",
 ]
 
 
