@@ -160,4 +160,9 @@ tokyonight_storm_theme = {
     "border": (0x24283B, 0xC0CAF5),
 }
 
+themes = {
+    "onedark": onedark_theme,
+    "tokyonight-storm": tokyonight_storm_theme,
+}
+
 default_theme = tokyonight_storm_theme

@@ -1,5 +1,5 @@
 from typing import Callable, NamedTuple
-from renderer import Theme, default_theme
+from renderer import Theme, themes
 from renderers.renderers import get_renderer
 from screen import Screen, VScreen
 from utils import ed_getch, flush, get_char_type, get_file_ext, get_width
@@ -139,6 +139,19 @@ class WindowLike:
             win.draw()
 
 
+class KeyHolder:
+    def __init__(self):
+        self.keymap = {}
+        self.cmdmap = {}
+        self.id: int
+
+    def cursor_real_pos(self) -> tuple[int, int]:
+        ...
+
+    def mode_normal(self):
+        ...
+
+
 class FloatWinFeatures(NamedTuple):
     border: bool = True
 
@@ -178,10 +191,7 @@ class FloatWin(WindowLike):
 
     def draw_text(self, top: int, left: int, text: str, tp: str):
         draw_text(self, self.v_screen.top + top, self.v_screen.left + left, self.v_screen.w,
-                  text, tp)
-
-    def fill_screen(self):
-        self.v_screen.fill(" ", self.editor.theme.get("text", False))
+                  text, tp, self.get_prio())
 
     def draw(self):
         super().draw()
@@ -198,6 +208,117 @@ class FloatWin(WindowLike):
             for i in range(self.w - 2):
                 self.v_screen.change(-1, i, "-", self.editor.theme.get("border", False))
                 self.v_screen.change(self.h - 2, i, "-", self.editor.theme.get("border", False))
+
+
+class FloatBuffer(FloatWin, KeyHolder):
+    def __init__(self, top: int, left: int, h: int, w: int,
+                    editor: "Editor", parent: WindowLike | None,
+                    features: FloatWinFeatures | None = None):
+        KeyHolder.__init__(self)
+        FloatWin.__init__(self, top, left, h, w, editor, parent, features)
+
+
+class ThemeSelector(FloatBuffer):
+    def __init__(self, editor: "Editor"):
+        super().__init__(0, 0, 10, 10, editor, None)
+        self.set_pos()
+
+        self.menu_h = self.h - 2
+        self.options = list(themes.keys())
+        self.selected = self.options.index(self.editor.theme_name)
+        self.scroll = 0
+        self.scroll_menu()
+
+        self.keymap = {
+            "INSERT": {},
+            "NORMAL": {
+                "j": self.cursor_down,
+                "k": self.cursor_up,
+                "<up>": self.cursor_up,
+                "<down>": self.cursor_down,
+                "<tab>": self.cursor_down,
+                "g": {
+                    "g": self.cursor_head,
+                },
+                "G": self.cursor_tail,
+                "<pagedown>": self.cursor_pagedown,
+                "<pageup>": self.cursor_pageup,
+                "<esc>": self.quit,
+                "q": self.quit,
+                "<cr>": self.quit,
+            },
+            "VISUAL": {},
+            "COMMAND": {},
+        }
+
+        self.hide = True
+
+    def get_prio(self):
+        return 1001
+
+    def quit(self, *_):
+        self.hide = True
+        for i in reversed(self.editor.winmove_seq):
+            if not isinstance(self.editor.win_ids[i], ThemeSelector):
+                self.editor.cur = self.editor.win_ids[i]
+                return
+        cur = self.editor.gwin.find_buffer()
+        if cur:
+            self.editor.cur = cur
+        else:
+            self.editor.quit_editor()
+
+    def cursor_up(self, n=1):
+        for _ in range(n):
+            self.selected -= 1
+            if self.selected < 0:
+                self.selected = len(self.options) - 1
+    
+    def cursor_down(self, n=1):
+        for _ in range(n):
+            self.selected += 1
+            if self.selected >= len(self.options):
+                self.selected = 0
+
+    def cursor_pageup(self, n=1):
+        self.selected = max(self.selected - n * self.menu_h, 0)
+
+    def cursor_pagedown(self, n=1):
+        self.selected = min(self.selected + n * self.menu_h, len(self.options) - 1)
+
+    def cursor_head(self, *_):
+        self.selected = 0
+
+    def cursor_tail(self, n=-1):
+        if n == -1:
+            self.selected = len(self.options) - 1
+        else:
+            self.selected = max(min(n, self.menu_h), 0)
+
+    def scroll_menu(self):
+        if self.selected < self.scroll:
+            self.scroll = self.selected
+        elif self.selected - self.menu_h >= self.scroll:
+            self.scroll = self.selected - self.menu_h + 1
+
+    def set_pos(self):
+        self.move(self.editor.h // 4, self.editor.w // 4)
+        self.resize(self.editor.h // 2, self.editor.w // 2)
+        self.menu_h = self.h - 2
+
+    def fill_screen(self):
+        self.set_pos()
+        self.scroll_menu()
+        self.editor.accept_cmd_set_theme(self.options[self.selected])
+        for i in range(self.menu_h):
+            self.draw_text(i, 0, "" if i >= len(self.options) else self.options[i + self.scroll],
+                           "completion_selected" if i + self.scroll == self.selected else "text")
+
+    def draw(self):
+        if self.hide:
+            return
+        self.fill_screen()
+        super().draw()
 
 
 class Window(WindowLike):
@@ -355,18 +476,11 @@ class Window(WindowLike):
             new_sp.editor.gwin = new_sp
 
 
-class Buffer(Window):
+class Buffer(Window, KeyHolder):
     def __init__(self, top: int, left: int, h: int, w: int,
-                 editor: "Editor", parent: "tuple[Split, bool] | None"):
+                    editor: "Editor", parent: "tuple[Split, bool] | None"):
+        KeyHolder.__init__(self)
         Window.__init__(self, top, left, h, w, editor, parent)
-        self.keymap = {}
-        self.cmdmap = {}
-
-    def cursor_real_pos(self) -> tuple[int, int]:
-        ...
-
-    def mode_normal(self):
-        ...
 
     def find_buffer(self) -> "Buffer | None":
         return self
@@ -555,7 +669,7 @@ class TextBuffer(Buffer, FileBase):
         self.prio = PrioBuffer
         self.file: str | None = None
         self.drawer = Drawer(editor.screen, self.text, self.left, self.top,
-                             self.h - 1, self.w, editor.theme, True, self.prio)
+                             self.h - 1, self.w, editor, True, self.prio)
 
         # 2025-4-30
         # 仅实验性功能，不确定是否长期保留
@@ -1016,7 +1130,7 @@ class deprecated_TextWindow(Window):
         self.text = [""]
         self.renderer = get_renderer()(self.text)
         self.drawer = Drawer(editor.screen, self.text, self.left, self.top,
-                             self.h - 1, self.w, editor.theme, True, 0)
+                             self.h - 1, self.w, editor, True, 0)
 
     def add_log(self, s: str):
         self.text.insert(len(self.text) - 1, s)
@@ -1163,10 +1277,11 @@ class Editor:
         self.fb_maps: dict[str, set[FileBase]] = {}
         self.h, self.w = h, w
         self.screen = Screen(self.h, self.w)
-        self.theme = Theme(default_theme)
+        self.theme_name = "tokyonight-storm"
+        self.theme = Theme(themes[self.theme_name])
         self.linum = True
         self.async_update_size = False
-        self.cur: Buffer = TextBuffer(0, 0, self.h - 1, self.w, self, None)
+        self.cur: KeyHolder = TextBuffer(0, 0, self.h - 1, self.w, self, None)
         self.gwin: Window = self.cur
         self.running = False
         self.cur_key: str = ""
@@ -1184,6 +1299,9 @@ class Editor:
                     "l": self.key_winmove_right,
                     "k": self.key_winmove_up,
                     "j": self.key_winmove_down,
+                    "s": {
+                        "t": self.accept_cmd_selectheme,
+                    },
                 },
             },
             "VISUAL": {
@@ -1210,15 +1328,22 @@ class Editor:
             "wh": self.accept_cmd_resize_h,
             "ww": self.accept_cmd_resize_w,
             "tree": self.open_explorer,
+            "theme": self.accept_cmd_set_theme,
+            "selectheme": self.accept_cmd_selectheme,
         }
         self.mode: None | str = None  # BufferHold/EditorHold
         self.cur_cmd = ""
         self.cmd_pos = 0
         self.message = ""
+        self.floatwins: list[FloatWin] = []
 
         self.debug_points: list[tuple[int, int]] = []
 
         self.winmove_seq: list[int] = [self.cur.id]
+
+        self.theme_selector = ThemeSelector(self)
+
+        self.floatwins.append(self.theme_selector)
 
         # self.gwin.split(True, TextWindow, "Debug Window")
         # self.debug_win: TextWindow = self.gwin.win2
@@ -1283,9 +1408,13 @@ class Editor:
         self.mode_normal()
 
     def accept_cmd_hsplit(self, *_):
+        if not isinstance(self.cur, Buffer):
+            return
         self.cur.split(HSplit)
 
     def accept_cmd_vsplit(self, *_):
+        if not isinstance(self.cur, Buffer):
+            return
         self.cur.split(VSplit)
 
     def accept_cmd_goto_by_id(self, arg: str):
@@ -1298,6 +1427,8 @@ class Editor:
                 self.cur = new
 
     def accept_cmd_resize_h(self, arg: str):
+        if not isinstance(self.cur, Buffer):
+            return
         try:
             if arg[0] == '+':
                 self.cur.resize_bottomup(self.cur.h + int(arg[1:]), self.cur.w)
@@ -1309,6 +1440,8 @@ class Editor:
             pass
 
     def accept_cmd_resize_w(self, arg: str):
+        if not isinstance(self.cur, Buffer):
+            return
         try:
             if arg[0] == '+':
                 self.cur.resize_bottomup(self.cur.h, self.cur.w + int(arg[1:]))
@@ -1319,25 +1452,33 @@ class Editor:
         except:
             pass
 
-    def open_explorer(self, arg: str):
+    def open_explorer(self, *_):
         self.gwin.split(VSplit, FileExplorer)
         if isinstance(self.gwin, Split):
             self.gwin.revert()
             self.gwin.win1.resize_bottomup(self.gwin.win1.h, max(30, self.w // 5))
 
     def key_winmove_right(self, *_):
+        if not isinstance(self.cur, Buffer):
+            return
         if (win := self.cur.find_right(self.cur.cursor_real_pos()[0])):
             self.cur = win
 
     def key_winmove_left(self, *_):
+        if not isinstance(self.cur, Buffer):
+            return
         if (win := self.cur.find_left(self.cur.cursor_real_pos()[0])):
             self.cur = win
 
     def key_winmove_up(self, *_):
+        if not isinstance(self.cur, Buffer):
+            return
         if (win := self.cur.find_up(self.cur.cursor_real_pos()[1])):
             self.cur = win
 
     def key_winmove_down(self, *_):
+        if not isinstance(self.cur, Buffer):
+            return
         if (win := self.cur.find_down(self.cur.cursor_real_pos()[1])):
             self.cur = win
 
@@ -1347,6 +1488,8 @@ class Editor:
         self.cmd_pos += 1
 
     def accept_cmd_close_window(self, *_):
+        if not isinstance(self.cur, Buffer):
+            return
         if self.cur.parent:
             parent = self.cur.parent[0]
             new_cur = parent.win1 if self.cur.parent[1] else parent.win2
@@ -1377,6 +1520,14 @@ class Editor:
             self.quit_editor()
             return
 
+    def accept_cmd_set_theme(self, arg: str):
+        if arg in themes:
+            self.theme = Theme(themes[arg])
+
+    def accept_cmd_selectheme(self, *_):
+        self.theme_selector.hide = False
+        self.cur = self.theme_selector
+
     def quit_editor(self, *_):
         self.running = False
 
@@ -1389,6 +1540,9 @@ class Editor:
 
     def draw(self):
         self.debug_points = []
+
+        for i in self.floatwins:
+            i.draw()
 
         if self.mode == "COMMAND":
             line = self.cur_cmd

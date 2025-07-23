@@ -41,7 +41,7 @@ class Editor:
             0,
             self.text_h,
             self.text_w,
-            self.theme,
+            self,
             True,
         )
         # self.linum_w = 2

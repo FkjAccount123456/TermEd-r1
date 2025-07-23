@@ -20,10 +20,11 @@ class Drawer:
 
     def __init__(self, screen: Screen, text: list[str],
                  top: int, left: int, h: int, w: int,
-                 theme: Theme, linum: bool, prio: int):
+                 editor, linum: bool, prio: int):
         self.screen, self.text = screen, text
         self.top, self.left = top, left
-        self.theme, self.linum = theme, linum
+        self.editor = editor
+        self.linum = linum
         self.prio = prio
         self.update_size(h, w)
 
@@ -155,12 +156,12 @@ class Drawer:
                         linum = f"%{self.linum_w - 1}d " % (cy + 1)
                         for ch in linum:
                             self.screen.change(self.top + scrcnt, self.left + cursh,
-                                               ch, self.theme.get("linum", False), self.prio)
+                                               ch, self.editor.theme.get("linum", False), self.prio)
                             cursh += 1
                     else:
                         while cursh < self.linum_w:
                             self.screen.change(self.top + scrcnt, self.left + cursh,
-                                               " ", self.theme.get("linum", False), self.prio)
+                                               " ", self.editor.theme.get("linum", False), self.prio)
                             cursh += 1
 
                 i = -1
@@ -169,7 +170,7 @@ class Drawer:
                         insel = selb <= (cy, i) <= sele
                     else:
                         insel = False
-                    color = self.theme.get(render.get(cy, i), insel)
+                    color = self.editor.theme.get(render.get(cy, i), insel)
                     self.screen.change(self.top + scrcnt, self.left + cursh,
                                     (ch := self.text[cy][i]), color, self.prio)
                     cursh += get_width(ch)
@@ -178,7 +179,7 @@ class Drawer:
                 i += 1
             while cursh < self.full_w:
                 self.screen.change(self.top + scrcnt, self.left + cursh,
-                                   " ", self.theme.get("text", False), self.prio)
+                                   " ", self.editor.theme.get("text", False), self.prio)
                 cursh += 1
                 if not isend:
                     i = None

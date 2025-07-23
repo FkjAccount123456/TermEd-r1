@@ -41,3 +41,4 @@ You can see them in ```./pics/```
 ![](/pics/微信截图_20250501094850.png "Editing python file")
 ![](/pics/微信截图_20250429211040.png "Splited to many windows")
 ![](/pics/屏幕截图_20250722_114845.png "Using file explorer")
+![](/pics/屏幕截图_20250723_173909.png "Running theme selector")
