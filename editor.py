@@ -764,6 +764,8 @@ class TextBuffer(Buffer, FileBase):
                 "<bs>": self.cursor_prev_char,
                 "f": self.cursor_fnxt_char,
                 "F": self.cursor_fprv_char,
+                "n": self.find_next,
+                "N": self.find_prev,
 
                 "d": self.merge_dict(self.gen_readpos_keymap(self.delete_to, self.delete_in), {
                     "d": lambda *n: self.key_del_line(*n),
@@ -807,6 +809,8 @@ class TextBuffer(Buffer, FileBase):
                 "<bs>": self.cursor_prev_char,
                 "f": self.cursor_fnxt_char,
                 "F": self.cursor_fprv_char,
+                "n": self.find_next,
+                "N": self.find_prev,
 
                 "i": {
                     "w": lambda *n: self.select_in(self.get_range_cur_word, *n),
@@ -821,6 +825,8 @@ class TextBuffer(Buffer, FileBase):
             "e": self.open_file,
             "e!": lambda *n: self.open_file(*n, force=True),
             "w": self.save_file,
+            "f": self.start_find,
+            "s": self.start_substitute,
         }
 
     def close(self):
@@ -867,7 +873,7 @@ class TextBuffer(Buffer, FileBase):
             "e": lambda *n: fn_to(self.cursor_next_word_end, *n),
             "b": lambda *n: fn_to(self.cursor_prev_word, *n),
             "g": {
-                "g": lambda *n: self.delete_in(self.gen_rangeto_fn(self.cursor_head, *n)),
+                "g": lambda *n: fn_to(self.cursor_head, *n),
             },
             "G": lambda *n: fn_to(self.cursor_tail, *n),
             "0": lambda *n: fn_to(self.cursor_head, *n),
@@ -877,6 +883,8 @@ class TextBuffer(Buffer, FileBase):
             "<bs>": lambda *n: fn_to(self.cursor_prev_char, *n),
             "f": lambda *n: fn_to(self.cursor_fnxt_char, *n),
             "F": lambda *n: fn_to(self.cursor_fprv_char, *n),
+            "n": lambda *n: fn_to(self.find_next, *n),
+            "N": lambda *n: fn_to(self.find_prev, *n),
             "i": {
                 "w": lambda *n: fn_in(self.get_range_cur_word, *n),
             },

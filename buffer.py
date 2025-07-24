@@ -120,7 +120,8 @@ class BufferBase:
 
     def key_normal_S(self, *_):
         self.key_normal_I()
-        self.textinputer.delete(self.y, 0, self.y, len(self.text[self.y]) - 1)
+        if self.x != len(self.text[self.y]):
+            self.textinputer.delete(self.y, self.x, self.y, len(self.text[self.y]) - 1)
 
     def key_normal_x(self, n=1):
         for _ in range(n):
@@ -396,3 +397,61 @@ class BufferBase:
         else:
             self.y, self.x = self.textinputer.insert(self.y, self.x, text)
         self.ideal_x = self.x
+
+    def start_find(self, arg: str):
+        self.find_str = arg
+        self.find_next()
+
+    def parse_substitute(self, arg: str) -> tuple[str, str]:
+        fr = ""
+        i = 0
+        while i < len(arg):
+            if arg[i] == '\\':
+                i += 1
+                if i < len(arg):
+                    fr += arg[i]
+            elif arg[i] == '/':
+                i += 1
+                break
+            else:
+                fr += arg[i]
+            i += 1
+        return fr, arg[i:]
+
+    def start_substitute(self, arg: str):
+        fr, to = self.parse_substitute(arg)
+        for i, line in enumerate(self.text):
+            self.text[i] = line.replace(fr, to)
+
+    def find_next(self):
+        # 有点Rust的意思了（
+        if res := self._find_next(self.find_str):
+            self.y, self.x = res
+            self.ideal_x = self.x
+
+    def find_prev(self):
+        if res := self._find_prev(self.find_str):
+            self.y, self.x = res
+            self.ideal_x = self.x
+
+    def _find_next(self, arg: str) -> None | tuple[int, int]:
+        if (res := self.text[self.y].find(arg, self.x + 1)) != -1:
+            return self.y, res
+        for y in range(self.y + 1, len(self.text)):
+            if (res := self.text[y].find(arg)) != -1:
+                return y, res
+        for y in range(0, self.y + 1):
+            if (res := self.text[y].find(arg)) != -1:
+                return y, res
+        return None
+
+    def _find_prev(self, arg: str) -> None | tuple[int, int]:
+        if (res := self.text[self.y].rfind(arg, 0, self.x)) != -1:
+            return self.y, res
+        for y in range(self.y - 1, -1, -1):
+            if (res := self.text[y].rfind(arg)) != -1:
+                return y, res
+        for y in range(len(self.text) - 1, self.y - 1, -1):
+            if (res := self.text[y].rfind(arg)) != -1:
+                return y, res
+        return None
