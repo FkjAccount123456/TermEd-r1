@@ -121,16 +121,31 @@ def colorcvt(fg: int | tuple[int, int, int]):
     return fg
 
 
+def stylecvt(style: list[str]):
+    res = []
+    for s in style:
+        res.append({
+            "bold": 1,
+            "italic": 3,
+            "underline": 4,
+        }.get(s, 0))
+        if res[-1] == 0:
+            res.pop()
+    res.sort()
+    return res
+
+
 cvt_cache = {}
 
 
-def cvt_truecolor(bg: tuple[int, int, int], fg: tuple[int, int, int]):
-    if (g := bg + fg) in cvt_cache:
+def cvt_truecolor(bg: tuple[int, int, int], fg: tuple[int, int, int], style: list[int]):
+    if (g := bg + fg + tuple(style)) in cvt_cache:
         return cvt_cache[g]
+    stylestr = "".join(map(lambda x: str(x) + ';', style))
     if bg == (0, 0, 0):
-        cvt_cache[g] = res = f"\033[38;2;{fg[0]};{fg[1]};{fg[2]}m"
+        cvt_cache[g] = res = f"\033[{stylestr}38;2;{fg[0]};{fg[1]};{fg[2]}m"
     else:
-        cvt_cache[g] = res = f"\033[38;2;{fg[0]};{fg[1]};{fg[2]}m\033[48;2;{bg[0]};{bg[1]};{bg[2]}m"
+        cvt_cache[g] = res = f"\033[{stylestr}38;2;{fg[0]};{fg[1]};{fg[2]}m\033[48;2;{bg[0]};{bg[1]};{bg[2]}m"
     return res
 
 

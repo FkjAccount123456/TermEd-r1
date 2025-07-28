@@ -184,12 +184,14 @@ class TextInputer:
         else:
             # 目前总结的区间删除最简模型
             # 写这里的时候脑子里是随时想着文本变动的
+            # 2025-7-28
+            # 这种基础设施竟然有bug，难以置信啊
             self.text[y] = self.text[y][:x]
             del self.text[y + 1 : q]
             if p == len(self.text[y + 1]):
                 del self.text[y + 1]
             else:
-                self.text[y + 1] = self.text[q][p + 1 :]
+                self.text[y + 1] = self.text[y + 1][p + 1 :]
             if y + 1 < len(self.text):
                 self.text[y] += self.text[y + 1]
                 del self.text[y + 1]

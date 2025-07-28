@@ -4,13 +4,14 @@ from utils import getch
 from pyperclip import paste, copy
 from utils import get_char_type
 from typing import Callable
+from renderer import Renderer
 
 
 class BufferBase:
     def __init__(self):
         self.textinputer = TextInputer(self)
         self.text = self.textinputer.text
-        self.renderer = get_renderer()(self.text)
+        self.renderer: Renderer = get_renderer()(self.text)
         self.y, self.x, self.ideal_x = 0, 0, 0
         self.sely, self.selx = 0, 0
         self.mode = "NORMAL"
@@ -105,11 +106,12 @@ class BufferBase:
 
     def key_normal_o(self, *_):
         self.key_normal_A()
-        self.insert("\n")
+        self.insert("\n" + self.renderer.get_indent(self.y))
 
     def key_normal_O(self, *_):
-        self.key_normal_I()
-        self.insert("\n")
+        self.mode = "INSERT"
+        self.x = self.ideal_x = 0
+        self.insert(self.renderer.get_indent(self.y - 1) + "\n")
         self.cursor_prev_char()
 
     def key_normal_s(self, n=1):
@@ -154,6 +156,22 @@ class BufferBase:
             self.y, self.x = self.textinputer.delete(
                 self.y, self.x - 1, self.y, self.x - 1
             )
+        elif self.y:
+            self.y, self.x = self.textinputer.delete(
+                self.y - 1,
+                len(self.text[self.y - 1]),
+                self.y - 1,
+                len(self.text[self.y - 1]),
+            )
+        self.ideal_x = self.x
+
+    def del_word_before_cursor(self, *_):
+        if self.x:
+            if self.x == 1 or get_char_type(self.text[self.y][self.x - 1]) != get_char_type(self.text[self.y][self.x - 2]):
+                self.del_before_cursor()
+                return
+            self.x -= 1
+            self.delete_to(self.cursor_prev_word)
         elif self.y:
             self.y, self.x = self.textinputer.delete(
                 self.y - 1,
@@ -390,6 +408,60 @@ class BufferBase:
             x0 -= 1
         return (y, x0), (y, x)
 
+    def get_range_match(self, ch: str, inrange=False):
+        """
+        改了好几版终于弄明白思路了
+        先向后找第一个抵消后出现的rch，再从找到的位置向前找match的ch
+        """
+        rch = {
+            '(': ')',
+            '{': '}',
+            '[': ']',
+            '<': '>',
+        }.get(ch, None)
+        if not rch:
+            return
+        y, x = self.y, self.x
+        tp = None
+        if not (x < len(self.text[y]) and self.text[y][x] == rch):
+            k = int(x < len(self.text[y]) and self.text[y][x] == ch)
+            pos0 = None
+            if k:
+                tp = self.renderer.get(self.y, self.x)
+            while (y, x) < (len(self.text) - 1, len(self.text[y])):
+                y, x = self.get_next_pos(y, x)
+                if x >= len(self.text[y]):
+                    continue
+                if not tp and self.text[y][x] in (ch, rch):
+                    tp = self.renderer.get(y, x)
+                if self.text[y][x] == ch and self.renderer.get(y, x) == tp:
+                    k += 1
+                elif self.text[y][x] == rch and self.renderer.get(y, x) == tp:
+                    k -= 1
+                    if k == 0 and not pos0:
+                        pos0 = y, x
+                    if k == -1:
+                        break
+            else:
+                if pos0:
+                    y, x = pos0
+                    k = -1
+                else:
+                    return None
+        else:
+            k = -1
+        end = y, x
+        while (y, x) > (0, 0):
+            y, x = self.get_prev_pos(y, x)
+            if x >= len(self.text[y]):
+                continue
+            if self.text[y][x] == ch and self.renderer.get(y, x) == tp:
+                k += 1
+                if k == 0:
+                    return ((y, x), end) if not inrange else (self.get_next_pos(y, x), self.get_prev_pos(*end))
+            elif self.text[y][x] == rch and self.renderer.get(y, x) == tp:
+                k -= 1
+
     def replace(self, text: str, r: None | tuple[tuple[int, int], tuple[int, int]]):
         if r:
             self.textinputer.delete(*r[0], *r[1])
@@ -434,24 +506,32 @@ class BufferBase:
             self.y, self.x = res
             self.ideal_x = self.x
 
-    def _find_next(self, arg: str) -> None | tuple[int, int]:
-        if (res := self.text[self.y].find(arg, self.x + 1)) != -1:
-            return self.y, res
-        for y in range(self.y + 1, len(self.text)):
+    def _find_next(self, arg: str, start: tuple[int, int] | None = None) -> None | tuple[int, int]:
+        if not start:
+            starty, startx = self.y, self.x
+        else:
+            starty, startx = start
+        if (res := self.text[starty].find(arg, startx + 1)) != -1:
+            return starty, res
+        for y in range(starty + 1, len(self.text)):
             if (res := self.text[y].find(arg)) != -1:
                 return y, res
-        for y in range(0, self.y + 1):
+        for y in range(0, starty + 1):
             if (res := self.text[y].find(arg)) != -1:
                 return y, res
         return None
 
-    def _find_prev(self, arg: str) -> None | tuple[int, int]:
-        if (res := self.text[self.y].rfind(arg, 0, self.x)) != -1:
-            return self.y, res
-        for y in range(self.y - 1, -1, -1):
+    def _find_prev(self, arg: str, start: tuple[int, int] | None = None) -> None | tuple[int, int]:
+        if not start:
+            starty, startx = self.y, self.x
+        else:
+            starty, startx = start
+        if (res := self.text[starty].rfind(arg, 0, startx)) != -1:
+            return starty, res
+        for y in range(starty - 1, -1, -1):
             if (res := self.text[y].rfind(arg)) != -1:
                 return y, res
-        for y in range(len(self.text) - 1, self.y - 1, -1):
+        for y in range(len(self.text) - 1, starty - 1, -1):
             if (res := self.text[y].rfind(arg)) != -1:
                 return y, res
         return None

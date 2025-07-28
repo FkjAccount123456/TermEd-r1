@@ -478,6 +478,22 @@ class PythonRenderer(Renderer):
 
     def clear(self): ...
 
+    def get_indent(self, y: int, use_tab=False, tab_size=4) -> str:
+        if y < 0 or y >= len(self.text):
+            return ""
+        while not self.text[y]:
+            y -= 1
+            if y < 0:
+                return ""
+        nspaces = 0
+        i = 0
+        while i < len(self.text[y]) and self.text[y][i] in " \t":
+            nspaces += 1 if self.text[y][i] == ' ' else tab_size
+            i += 1
+        if self.text[y][-1] in "([{:":
+            return self.text[y][:i // tab_size * tab_size] + ' ' * tab_size if not use_tab else '\t'
+        return self.text[y][:i]
+
 
 libpyhl.init()
 

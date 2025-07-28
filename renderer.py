@@ -1,4 +1,5 @@
-from utils import colorcvt, cvt_truecolor, copy_structure
+from utils import colorcvt, cvt_truecolor, copy_structure, stylecvt, ed_getch
+import copy
 
 
 class Renderer:
@@ -57,21 +58,28 @@ class Renderer:
         self.states = [[]]
         self.results = [[]]
 
+    def get_indent(self, y: int) -> str:
+        return ""
+
 
 class Theme:
     def __init__(self, d: dict):
-        self.d = d
+        self.d = copy.deepcopy(d)
         for i in self.d:
-            self.d[i] = colorcvt(self.d[i][0]), colorcvt(self.d[i][1])
+            color = self.d[i]
+            while isinstance(color, str):
+                color = d[color]
+            self.d[i] = colorcvt(color[0]), colorcvt(color[1]), [] if len(color) == 2 else stylecvt(color[2])
 
     def get(self, token: str, insel: bool):
+        style = self.d[token][2]
         if insel:
             if self.d[token][1] == self.d["sel"][0]:
-                return cvt_truecolor(self.d["sel"][0], self.d["bg"][1])
-            return cvt_truecolor(self.d["sel"][0], self.d[token][1])
+                return cvt_truecolor(self.d["sel"][0], self.d["bg"][1], style)
+            return cvt_truecolor(self.d["sel"][0], self.d[token][1], style)
         if self.d[token][0] != 0:
-            return cvt_truecolor(self.d[token][0], self.d[token][1])
-        return cvt_truecolor(self.d["bg"][0], self.d[token][1])
+            return cvt_truecolor(self.d[token][0], self.d[token][1], style)
+        return cvt_truecolor(self.d["bg"][0], self.d[token][1], style)
 
 
 # 懒得写了
@@ -133,15 +141,15 @@ tokyonight_storm_theme = {
     "cursor": (0x528BFF, 0x528BFF),
     "linum": (0x24283B, 0x495162),
     "num": (0x24283B, 0xFF9E64),
-    "kw": (0X24283B, 0x9D7CD8),
+    "kw": (0X24283B, 0x9D7CD8, ["italic"]),
     "kwfunc": (0X24283B, 0xBB9AF7),
-    "kwclass": (0X24283B, 0x9D7CD8),
+    "kwclass": "kw",
     "kwpreproc": (0x24283B, 0x7DCFFF),
-    "kwcond": (0x24283B, 0xBB9AF7),
-    "kwrepeat": (0x24283B, 0xBB9AF7),
-    "kwreturn": (0x24283B, 0x9D7CD8),
-    "kwcoroutine": (0X24283B, 0x9D7CD8),
-    "kwexception": (0X24283B, 0x9D7CD8),
+    "kwcond": "kwfunc",
+    "kwrepeat": "kwfunc",
+    "kwreturn": "kw",
+    "kwcoroutine": "kw",
+    "kwexception": "kw",
     "str": (0x24283B, 0x9ECE6A),
     "escape": (0x24283B, 0xC099FF),
     "const": (0x24283B, 0xFF966C),

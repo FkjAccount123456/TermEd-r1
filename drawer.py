@@ -124,6 +124,7 @@ class Drawer:
         return i
 
     def scroll_buffer(self, y: int, x: int):
+        self.scry = min(len(self.text) - 1, self.scry)
         ys, _ = self.get_line_hw(self.text[self.scry])
         if self.scrys >= ys:
             self.scrys = ys - 1

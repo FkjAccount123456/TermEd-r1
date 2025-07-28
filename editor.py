@@ -711,6 +711,9 @@ class TextBuffer(Buffer, FileBase):
                 "<C-n>": self.cmp_select_next,
                 "<C-p>": self.cmp_select_prev,
                 "<C-y>": self.cmp_menu_accept,
+
+                "<C-h>": self.del_before_cursor,
+                "<C-w>": self.del_word_before_cursor,
             },
             "NORMAL": {
                 "i": self.mode_insert,
@@ -814,6 +817,23 @@ class TextBuffer(Buffer, FileBase):
 
                 "i": {
                     "w": lambda *n: self.select_in(self.get_range_cur_word, *n),
+                    "(": lambda *n: self.select_in(lambda: self.get_range_match("(", True), *n),
+                    "[": lambda *n: self.select_in(lambda: self.get_range_match("[", True), *n),
+                    "{": lambda *n: self.select_in(lambda: self.get_range_match("{", True), *n),
+                    "<": lambda *n: self.select_in(lambda: self.get_range_match("<", True), *n),
+                    "\"": lambda *n: self.select_in(lambda: self.get_range_match("\"", True), *n),
+                    "'": lambda *n: self.select_in(lambda: self.get_range_match("'", True), *n),
+                    "`": lambda *n: self.select_in(lambda: self.get_range_match("`", True), *n),
+                },
+                "a": {
+                    "w": lambda *n: self.select_in(self.get_range_cur_word, *n),
+                    "(": lambda *n: self.select_in(lambda: self.get_range_match("("), *n),
+                    "[": lambda *n: self.select_in(lambda: self.get_range_match("["), *n),
+                    "{": lambda *n: self.select_in(lambda: self.get_range_match("{"), *n),
+                    "<": lambda *n: self.select_in(lambda: self.get_range_match("<"), *n),
+                    "\"": lambda *n: self.select_in(lambda: self.get_range_match("\""), *n),
+                    "'": lambda *n: self.select_in(lambda: self.get_range_match("'"), *n),
+                    "`": lambda *n: self.select_in(lambda: self.get_range_match("`"), *n),
                 },
             },
             "COMMAND": {
@@ -887,6 +907,23 @@ class TextBuffer(Buffer, FileBase):
             "N": lambda *n: fn_to(self.find_prev, *n),
             "i": {
                 "w": lambda *n: fn_in(self.get_range_cur_word, *n),
+                "(": lambda *n: fn_in(lambda: self.get_range_match("(", True), *n),
+                "[": lambda *n: fn_in(lambda: self.get_range_match("[", True), *n),
+                "{": lambda *n: fn_in(lambda: self.get_range_match("{", True), *n),
+                "<": lambda *n: fn_in(lambda: self.get_range_match("<", True), *n),
+                "\"": lambda *n: fn_in(lambda: self.get_range_match("\"", True), *n),
+                "'": lambda *n: fn_in(lambda: self.get_range_match("'", True), *n),
+                "`": lambda *n: fn_in(lambda: self.get_range_match("`", True), *n),
+            },
+            "a": {
+                "w": lambda *n: fn_in(self.get_range_cur_word, *n),
+                "(": lambda *n: fn_in(lambda: self.get_range_match("("), *n),
+                "[": lambda *n: fn_in(lambda: self.get_range_match("["), *n),
+                "{": lambda *n: fn_in(lambda: self.get_range_match("{"), *n),
+                "<": lambda *n: fn_in(lambda: self.get_range_match("<"), *n),
+                "\"": lambda *n: fn_in(lambda: self.get_range_match("\""), *n),
+                "'": lambda *n: fn_in(lambda: self.get_range_match("'"), *n),
+                "`": lambda *n: fn_in(lambda: self.get_range_match("`"), *n),
             },
         }
 
@@ -938,6 +975,7 @@ class TextBuffer(Buffer, FileBase):
             self.cmp_menu_accept()
         else:
             self.insert("\n")
+            self.insert(self.renderer.get_indent(self.y - 1))
 
     def key_tab(self, *_):
         if self.cmp_menu:
