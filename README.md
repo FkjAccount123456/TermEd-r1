@@ -28,8 +28,8 @@ python3 ./termed.py ./file.py  # open a file
 - Linux support
 - File explorer (experimental, primary)
 - Floating window
+- Auto indent (primary)
 # Todo List
-- Auto indent
 - Builtin configuration language
 - GUI
 - Tree-sitter integration

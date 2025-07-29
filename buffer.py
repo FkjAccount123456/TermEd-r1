@@ -1,4 +1,5 @@
-from textinputer import TextInputer
+from textinputer import TextInputer, History, HistoryType
+from copy import deepcopy
 from renderers.renderers import get_renderer
 from utils import getch
 from pyperclip import paste, copy
@@ -571,8 +572,12 @@ class BufferBase:
 
     def start_substitute(self, arg: str):
         fr, to = self.parse_substitute(arg)
+        from_text = deepcopy(self.text)
         for i, line in enumerate(self.text):
             self.text[i] = line.replace(fr, to)
+        self.textinputer.cur_history = self.textinputer.cur_history.add(
+            History(HistoryType.Refill, (self.y, self.x), (0, 0), "",
+                    (from_text, deepcopy(self.text))))
 
     def find_next(self):
         # 有点Rust的意思了（

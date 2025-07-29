@@ -17,14 +17,16 @@ class HistoryType(Enum):
     Delete = 0
     Insert = 1
     Null = 2  # 仅允许一个作为Root
+    Refill = 3  # 用于记录替换操作，begin字段记录当时的光标位置
 
 
 class History:
     def __init__(self, tp: HistoryType,
                  begin: tuple[int, int],
                  end: tuple[int, int],  # 闭区间
-                 text: str):
-        self.tp, self.begin, self.end, self.text = tp, begin, end, text
+                 text: str,
+                 refill: tuple[list[str], list[str]] | None = None):
+        self.tp, self.begin, self.end, self.text, self.refill = tp, begin, end, text, refill
 
     def __str__(self):
         return f"History({self.tp}, {self.begin}, {self.end}, {repr(self.text)})"
@@ -103,8 +105,13 @@ class TextInputer:
             self.cur_history = self.cur_history.parent
             if hs.tp == HistoryType.Delete:
                 return self.insert(*hs.begin, hs.text, True)
-            else:
+            elif hs.tp == HistoryType.Insert:
                 return self.delete(*hs.begin, *hs.end, True)
+            elif hs.tp == HistoryType.Refill:
+                self.text.clear()
+                if hs.refill:
+                    self.text.extend(hs.refill[0])
+                return hs.begin
 
     def redo(self):
         if self.cur_history.chs:
@@ -112,8 +119,13 @@ class TextInputer:
             self.cur_history = self.cur_history.chs[-1]
             if hs.tp == HistoryType.Insert:
                 return self.insert(*hs.begin, hs.text, True)
-            else:
+            elif hs.tp == HistoryType.Delete:
                 return self.delete(*hs.begin, *hs.end, True)
+            elif hs.tp == HistoryType.Refill:
+                self.text.clear()
+                if hs.refill:
+                    self.text.extend(hs.refill[1])
+                return hs.begin
 
     def clear(self):
         # self.parent.renderer.rem(0, len(self.text) - 1)
