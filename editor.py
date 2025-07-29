@@ -769,6 +769,11 @@ class TextBuffer(Buffer, FileBase):
                 "F": self.cursor_fprv_char,
                 "n": self.find_next,
                 "N": self.find_prev,
+                "%": self.goto_match,
+                "{": self.cursor_prev_paragragh,
+                "}": self.cursor_next_paragragh,
+                "(": self.cursor_prev_paragragh,
+                ")": self.cursor_next_paragragh,
 
                 "d": self.merge_dict(self.gen_readpos_keymap(self.delete_to, self.delete_in), {
                     "d": lambda *n: self.key_del_line(*n),
@@ -814,9 +819,15 @@ class TextBuffer(Buffer, FileBase):
                 "F": self.cursor_fprv_char,
                 "n": self.find_next,
                 "N": self.find_prev,
+                "%": self.goto_match,
+                "{": self.cursor_prev_paragragh,
+                "}": self.cursor_next_paragragh,
+                "(": self.cursor_prev_paragragh,
+                ")": self.cursor_next_paragragh,
 
                 "i": {
                     "w": lambda *n: self.select_in(self.get_range_cur_word, *n),
+                    "p": lambda *n: self.select_in(lambda: self.get_range_paragraph(True), *n),
                     "(": lambda *n: self.select_in(lambda: self.get_range_match("(", True), *n),
                     "[": lambda *n: self.select_in(lambda: self.get_range_match("[", True), *n),
                     "{": lambda *n: self.select_in(lambda: self.get_range_match("{", True), *n),
@@ -827,6 +838,7 @@ class TextBuffer(Buffer, FileBase):
                 },
                 "a": {
                     "w": lambda *n: self.select_in(self.get_range_cur_word, *n),
+                    "p": lambda *n: self.select_in(lambda: self.get_range_paragraph(), *n),
                     "(": lambda *n: self.select_in(lambda: self.get_range_match("("), *n),
                     "[": lambda *n: self.select_in(lambda: self.get_range_match("["), *n),
                     "{": lambda *n: self.select_in(lambda: self.get_range_match("{"), *n),
@@ -905,6 +917,12 @@ class TextBuffer(Buffer, FileBase):
             "F": lambda *n: fn_to(self.cursor_fprv_char, *n),
             "n": lambda *n: fn_to(self.find_next, *n),
             "N": lambda *n: fn_to(self.find_prev, *n),
+            "%": lambda *n: fn_to(self.goto_match, *n),
+            "{": lambda *n: fn_to(self.cursor_prev_paragragh, *n),
+            "}": lambda *n: fn_to(self.cursor_next_paragragh, *n),
+            "(": lambda *n: fn_to(self.cursor_prev_paragragh, *n),
+            ")": lambda *n: fn_to(self.cursor_next_paragragh, *n),
+
             "i": {
                 "w": lambda *n: fn_in(self.get_range_cur_word, *n),
                 "(": lambda *n: fn_in(lambda: self.get_range_match("(", True), *n),

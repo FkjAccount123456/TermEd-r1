@@ -462,6 +462,85 @@ class BufferBase:
             elif self.text[y][x] == rch and self.renderer.get(y, x) == tp:
                 k -= 1
 
+    def find_match(self, y: int, x: int) -> None | tuple[int, int]:
+        lparens = "([{"
+        rparens = ")]}"
+        if not (x < len(self.text[y]) and self.text[y][x] in (lparens + rparens)):
+            while (y, x) < (len(self.text) - 1, len(self.text[-1])):
+                y, x = self.get_next_pos(y, x)
+                if x < len(self.text[y]) and self.text[y][x] in (lparens + rparens):
+                    break
+            else:
+                return
+        if self.text[y][x] in lparens:
+            k = 1
+            while (y, x) < (len(self.text) - 1, len(self.text[-1])):
+                y, x = self.get_next_pos(y, x)
+                if x >= len(self.text[y]):
+                    continue
+                if self.text[y][x] in lparens:
+                    k += 1
+                elif self.text[y][x] in rparens:
+                    k -= 1
+                    if k == 0:
+                        return y, x
+        else:
+            k = 1
+            while (y, x) > (0, 0):
+                y, x = self.get_prev_pos(y, x)
+                if x >= len(self.text[y]):
+                    continue
+                if self.text[y][x] in rparens:
+                    k += 1
+                elif self.text[y][x] in lparens:
+                    k -= 1
+                    if k == 0:
+                        return y, x
+
+    def goto_match(self, *_):
+        if res := self.find_match(self.y, self.x):
+            self.y, self.x = res
+            self.ideal_x = self.x
+
+    def cursor_prev_paragragh(self, n: int = 1):
+        for _ in range(n):
+            if self.y == 0:
+                break
+            self.y -= 1
+            while self.y > 0 and not self.text[self.y].strip():
+                self.y -= 1
+            while self.y > 0 and self.text[self.y - 1].strip():
+                self.y -= 1
+            self.x = 0
+        self.ideal_x = self.x
+
+    def cursor_next_paragragh(self, n: int = 1):
+        for _ in range(n):
+            if self.y == len(self.text) - 1:
+                break
+            self.y += 1
+            while self.y < len(self.text) - 1 and not self.text[self.y].strip():
+                self.y += 1
+            while self.y < len(self.text) - 1 and self.text[self.y].strip():
+                self.y += 1
+            while self.y < len(self.text) - 1 and not self.text[self.y].strip():
+                self.y += 1
+            self.x = 0
+        self.ideal_x = self.x
+
+    def get_range_paragraph(self, inrange=False) -> None | tuple[tuple[int, int], tuple[int, int]]:
+        if not self.text[self.y].strip():
+            return
+        y = endy = self.y
+        while y > 0 and self.text[y - 1].strip():
+            y -= 1
+        while endy < len(self.text) - 1 and self.text[endy + 1].strip():
+            endy += 1
+        if not inrange:
+            y = max(0, y - 1)
+            endy = min(len(self.text) - 1, endy + 1)
+        return (y, 0), (endy, len(self.text[endy]))
+
     def replace(self, text: str, r: None | tuple[tuple[int, int], tuple[int, int]]):
         if r:
             self.textinputer.delete(*r[0], *r[1])

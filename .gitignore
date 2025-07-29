@@ -20,4 +20,4 @@ main-temp.py
 .idea/
 .fleet/
 test*
-.ropeproject/
+*project/
