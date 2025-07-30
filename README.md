@@ -5,6 +5,10 @@ TermEd, short for Terminal Editor, is an editor with unicode support, window spl
 ``` bash
 git clone https://github.com/FkjAccount123456/TermEd.git
 ```
+- Install Python Dependencies
+``` bash
+pip3 install -r requirements.txt
+```
 - Compile C Libraries (only for highlighting currently)
 ``` bash
 cd TermEd/
@@ -29,11 +33,11 @@ python3 ./termed.py ./file.py  # open a file
 - File explorer (experimental, primary)
 - Floating window
 - Auto indent (primary)
+- CTags integration (primary)
 # Todo List
 - Builtin configuration language
 - GUI
 - Tree-sitter integration
-- CTags integration
 - LSP integration (may done by plugins)
 # Screenshots
 You can see them in ```./pics/```

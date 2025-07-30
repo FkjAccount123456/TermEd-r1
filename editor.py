@@ -7,6 +7,7 @@ from drawer import Drawer
 from threading import Thread
 from buffer import BufferBase
 from ederrors import *
+from tagparse import parse_tags_file, tags_navigate, merge_tags
 import os
 
 
@@ -782,6 +783,8 @@ class TextBuffer(Buffer, FileBase):
                 "y": self.merge_dict(self.gen_readpos_keymap(self.yank_to, self.yank_in), {
                     "y": lambda *n: self.key_yank_line(*n),
                 }),
+
+                "<C-]>": self.goto_tagfind,
             },
             "VISUAL": {
                 "<esc>": self.mode_normal,
@@ -859,6 +862,7 @@ class TextBuffer(Buffer, FileBase):
             "w": self.save_file,
             "f": self.start_find,
             "s": self.start_substitute,
+            "tag": self.tags_find,
         }
 
     def close(self):
@@ -1011,6 +1015,23 @@ class TextBuffer(Buffer, FileBase):
             if self.y < 0:
                 self.y = 0
         self.x = min(len(self.text[self.y]), self.ideal_x)
+
+    def tags_find(self, tag: str):
+        # print(self.editor.tagsfile, self.editor.tags)
+        if tag in self.editor.tags:
+            if res := tags_navigate(self.editor.tags[tag][0]):
+                file, pos = res
+                self.open_file(file)
+                if self.file:
+                    self.y = pos[0]
+                    self.x = self.ideal_x = pos[1]
+
+    def goto_tagfind(self, *_):
+        cur_range = self.get_range_cur_word()
+        if cur_range:
+            (y, x), (q, p) = cur_range
+            text = self.textinputer.get(y, x, q, p)
+            self.tags_find(text)
 
     def cursor_pagedown(self, n: int = 1):
         for _ in range(n):
@@ -1394,12 +1415,17 @@ class Editor:
             "tree": self.open_explorer,
             "theme": self.accept_cmd_set_theme,
             "selectheme": self.accept_cmd_selectheme,
+            "addtags": self.accept_cmd_add_tags,
+            "cleartags": self.accept_cmd_clear_tags,
         }
         self.mode: None | str = None  # BufferHold/EditorHold
         self.cur_cmd = ""
         self.cmd_pos = 0
         self.message = ""
         self.floatwins: list[FloatWin] = []
+
+        self.tagsfile = []
+        self.tags = {}
 
         self.debug_points: list[tuple[int, int]] = []
 
@@ -1408,6 +1434,9 @@ class Editor:
         self.theme_selector = ThemeSelector(self)
 
         self.floatwins.append(self.theme_selector)
+
+        self.accept_cmd_add_tags("tags")
+        # self.accept_cmd_add_tags(r"D:\msys64\clang64\include\tags")
 
         # self.gwin.split(True, TextWindow, "Debug Window")
         # self.debug_win: TextWindow = self.gwin.win2
@@ -1591,6 +1620,15 @@ class Editor:
     def accept_cmd_selectheme(self, *_):
         self.theme_selector.hide = False
         self.cur = self.theme_selector
+
+    def accept_cmd_add_tags(self, arg: str):
+        if os.path.exists(arg) and os.path.isfile(arg):
+            self.tagsfile.append(arg)
+            merge_tags(self.tags, parse_tags_file(arg))
+
+    def accept_cmd_clear_tags(self, *_):
+        self.tagsfile.clear()
+        self.tags.clear()
 
     def quit_editor(self, *_):
         self.running = False
