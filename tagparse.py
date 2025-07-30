@@ -32,7 +32,7 @@ def parse_tags_file(tags_path: str) -> dict[str, list[TagEntry]]:
     return tags
 
 
-def tags_navigate(entry: TagEntry) -> tuple[str, tuple[int, int]] | None:
+def tags_navigate(entry: TagEntry, lines: list[str] | None = None) -> tuple[str, tuple[int, int]] | None:
     file = entry['path']
     if not os.path.exists(file) or not os.path.isfile(file):
         return
@@ -44,12 +44,14 @@ def tags_navigate(entry: TagEntry) -> tuple[str, tuple[int, int]] | None:
         except ValueError:
             return
     pattern = pattern[pattern.find('^') + 1 : pattern.rfind('$')].strip()
-    with open(file, 'r', encoding='utf-8') as f:
-        for i, line in enumerate(f):
-            if (j := line.find(pattern)) != -1:
-                if (j := line.find(entry['name'], j)) != -1:
-                    return file, (i, j)
+    if not lines:
+        with open(file, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
+    for i, line in enumerate(lines):
+        if (j := line.find(pattern)) != -1:
+            if (j := line.find(entry['name'], j)) != -1:
                 return file, (i, j)
+            return file, (i, j)
 
 
 # 又一个副作用merge

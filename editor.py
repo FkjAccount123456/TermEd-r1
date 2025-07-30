@@ -7,7 +7,7 @@ from drawer import Drawer
 from threading import Thread
 from buffer import BufferBase
 from ederrors import *
-from tagparse import parse_tags_file, tags_navigate, merge_tags
+from tagparse import parse_tags_file, tags_navigate, merge_tags, TagEntry
 import os
 
 
@@ -23,11 +23,16 @@ PrioBuffer = 0
 
 # 又是可恶的徒手绘图（
 # 要不然封装一下吧
-def draw_text(self: "WindowLike", top: int, left: int, width: int, text: str, tp: str, prio=0):
+def draw_text(self: "WindowLike", top: int, left: int, width: int, text: str, tp: str, prio=0, rev=False):
     # print(f"draw_text{(type(self).__name__, top, left, width, len(text), tp, prio)}")
     shw = 0
     color = self.editor.theme.get(tp, False)
-    for ch in text:
+    start = 0
+    if (sumw := sum(map(get_width, text))) > width and rev:
+        while start < len(text) and sumw > width:
+            start += 1
+            sumw -= get_width(text[start - 1])
+    for ch in text[start:]:
         cur_width = get_width(ch)
         if shw + cur_width > width:
             break
@@ -171,6 +176,7 @@ class FloatWin(WindowLike):
                                 self.h - self.features.border * 2, self.w - self.features.border * 2,
                                 self.editor.screen, self.get_prio())
         self.hide = False
+        self.title = ""
 
     def resize(self, h: int, w: int):
         self.h, self.w = h, w
@@ -209,6 +215,11 @@ class FloatWin(WindowLike):
             for i in range(self.w - 2):
                 self.v_screen.change(-1, i, "-", self.editor.theme.get("border", False))
                 self.v_screen.change(self.h - 2, i, "-", self.editor.theme.get("border", False))
+            if self.title:
+                twidth = min(self.v_screen.w // 2, sum(map(get_width, self.title)))
+                tleft = (self.v_screen.w - twidth) // 2
+                draw_text(self, self.top, self.v_screen.left + tleft, twidth,
+                          self.title, "border", self.get_prio())
 
 
 class FloatBuffer(FloatWin, KeyHolder):
@@ -253,6 +264,7 @@ class ThemeSelector(FloatBuffer):
         }
 
         self.hide = True
+        self.title = "Theme Selector"
 
     def get_prio(self):
         return 1001
@@ -314,6 +326,145 @@ class ThemeSelector(FloatBuffer):
         for i in range(self.menu_h):
             self.draw_text(i, 0, "" if i >= len(self.options) else self.options[i + self.scroll],
                            "completion_selected" if i + self.scroll == self.selected else "text")
+
+    def draw(self):
+        if self.hide:
+            return
+        self.fill_screen()
+        super().draw()
+
+
+# 《磁盘密集型》
+# 后面也许会搞缓存
+class TagSelector(FloatBuffer):
+    def __init__(self, editor: "Editor"):
+        super().__init__(0, 0, 10, 10, editor, None)
+        self.set_pos()
+
+        self.options: list[TagEntry]
+        self.selected = 0
+        self.scroll = 0
+
+        self.keymap = {
+            "INSERT": {},
+            "NORMAL": {
+                "j": self.cursor_down,
+                "k": self.cursor_up,
+                "<up>": self.cursor_up,
+                "<down>": self.cursor_down,
+                "<tab>": self.cursor_down,
+                "g": {
+                    "g": self.cursor_head,
+                },
+                "G": self.cursor_tail,
+                "<pagedown>": self.cursor_pagedown,
+                "<pageup>": self.cursor_pageup,
+                "<esc>": self.quit,
+                "q": self.quit,
+                "<cr>": self.accept,
+            },
+            "VISUAL": {},
+            "COMMAND": {},
+        }
+
+        self.hide = True
+        self.title = "Tag Selector"
+
+    def get_prio(self):
+        return 1001
+    
+    def find_cur(self) -> "Buffer | None":
+        for i in reversed(self.editor.winmove_seq):
+            if isinstance(self.editor.win_ids[i], TextBuffer):
+                self.editor.cur = self.editor.win_ids[i]
+                return self.editor.win_ids[i]
+        return self.editor.gwin.find_buffer()
+    
+    def quit(self, *_):
+        self.hide = True
+        if cur := self.find_cur():
+            self.editor.cur = cur
+        else:
+            self.editor.quit_editor()
+
+    def accept(self, *_):
+        self.hide = True
+        if cur := self.find_cur():
+            self.editor.cur = cur
+            if isinstance(self.editor.cur, TextBuffer):
+                self.editor.cur.goto_tag(self.options[self.selected])
+        else:
+            self.editor.quit_editor()
+
+    def cursor_up(self, n=1):
+        for _ in range(n):
+            self.selected -= 1
+            if self.selected < 0:
+                self.selected = len(self.options) - 1
+    
+    def cursor_down(self, n=1):
+        for _ in range(n):
+            self.selected += 1
+            if self.selected >= len(self.options):
+                self.selected = 0
+
+    def cursor_pageup(self, n=1):
+        self.selected = max(self.selected - n * self.menu_h, 0)
+
+    def cursor_pagedown(self, n=1):
+        self.selected = min(self.selected + n * self.menu_h, len(self.options) - 1)
+
+    def cursor_head(self, *_):
+        self.selected = 0
+
+    def cursor_tail(self, n=-1):
+        if n == -1:
+            self.selected = len(self.options) - 1
+        else:
+            self.selected = max(min(n, self.menu_h), 0)
+
+    def start(self, options: list[TagEntry]):
+        self.options = options
+        self.selected = 0
+        self.scroll = 0
+        self.hide = False
+
+    def scroll_menu(self):
+        if self.selected < self.scroll:
+            self.scroll = self.selected
+        elif self.selected - self.menu_h >= self.scroll:
+            self.scroll = self.selected - self.menu_h + 1
+
+    def set_pos(self):
+        self.move(self.editor.h // 8, self.editor.w // 8)
+        self.resize(self.editor.h // 4 * 3, self.editor.w // 4 * 3)
+        self.menu_h = self.h - 2
+
+    def fill_screen(self):
+        self.set_pos()
+        self.scroll_menu()
+        optionsw = self.v_screen.w // 3
+        for i in range(self.menu_h):
+            draw_text(
+                self, self.v_screen.top + i, self.v_screen.left, optionsw,
+                "" if i >= len(self.options) else f"[{i + self.scroll}]" + self.options[i + self.scroll]["name"],
+                "completion_selected" if i + self.scroll == self.selected else "text", self.get_prio())
+        dleft = self.v_screen.left + optionsw + 1
+        displayw = self.v_screen.w - optionsw - 1
+        displayh = self.v_screen.h
+        with open(self.options[self.selected]["path"], "r", encoding="utf-8") as f:
+            lines = f.readlines()
+        if res := tags_navigate(self.options[self.selected], lines):
+            _, (y, _) = res
+            dstart = max(0, y - displayh // 2) - 1
+            self.v_screen.change(1, optionsw, "|", self.editor.theme.get("border", False))
+            draw_text(self, self.v_screen.top, dleft, displayw,
+                      self.options[self.selected]["path"], "text", self.get_prio(), rev=True)
+            for i in range(1, displayh):
+                self.v_screen.change(i, optionsw, "|", self.editor.theme.get("border", False))
+                draw_text(self, self.v_screen.top + i, dleft, displayw,
+                          "" if dstart + i >= len(lines) else lines[dstart + i].replace("\n", "").replace("\r", ""),
+                          "completion_selected" if dstart + i == y else "text", self.get_prio())
 
     def draw(self):
         if self.hide:
@@ -1016,15 +1167,21 @@ class TextBuffer(Buffer, FileBase):
                 self.y = 0
         self.x = min(len(self.text[self.y]), self.ideal_x)
 
+    def goto_tag(self, tag: TagEntry):
+        if res := tags_navigate(tag):
+            file, (y, x) = res
+            self.open_file(file)
+            if os.path.abspath(self.file) == os.path.abspath(file):
+                self.y = y
+                self.x = self.ideal_x = x
+
     def tags_find(self, tag: str):
         # print(self.editor.tagsfile, self.editor.tags)
         if tag in self.editor.tags:
-            if res := tags_navigate(self.editor.tags[tag][0]):
-                file, pos = res
-                self.open_file(file)
-                if self.file:
-                    self.y = pos[0]
-                    self.x = self.ideal_x = pos[1]
+            if len(self.editor.tags[tag]) > 1:
+                self.editor.start_tagselect(self.editor.tags[tag])
+            else:
+                self.goto_tag(self.editor.tags[tag][0])
 
     def goto_tagfind(self, *_):
         cur_range = self.get_range_cur_word()
@@ -1432,8 +1589,10 @@ class Editor:
         self.winmove_seq: list[int] = [self.cur.id]
 
         self.theme_selector = ThemeSelector(self)
+        self.tag_selector = TagSelector(self)
 
         self.floatwins.append(self.theme_selector)
+        self.floatwins.append(self.tag_selector)
 
         self.accept_cmd_add_tags("tags")
         # self.accept_cmd_add_tags(r"D:\msys64\clang64\include\tags")
@@ -1629,6 +1788,10 @@ class Editor:
     def accept_cmd_clear_tags(self, *_):
         self.tagsfile.clear()
         self.tags.clear()
+
+    def start_tagselect(self, tags: list[TagEntry]):
+        self.tag_selector.start(tags)
+        self.cur = self.tag_selector
 
     def quit_editor(self, *_):
         self.running = False

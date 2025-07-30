@@ -16,6 +16,7 @@ class BufferBase:
         self.y, self.x, self.ideal_x = 0, 0, 0
         self.sely, self.selx = 0, 0
         self.mode = "NORMAL"
+        self.find_str = ""
 
         self.tabsize = 4
 
@@ -581,11 +582,15 @@ class BufferBase:
 
     def find_next(self):
         # 有点Rust的意思了（
+        if not self.find_str:
+            return
         if res := self._find_next(self.find_str):
             self.y, self.x = res
             self.ideal_x = self.x
 
     def find_prev(self):
+        if not self.find_str:
+            return
         if res := self._find_prev(self.find_str):
             self.y, self.x = res
             self.ideal_x = self.x

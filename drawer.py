@@ -167,7 +167,7 @@ class Drawer:
 
                 i = -1
                 for i in range(curln[cys], curln[cys + 1]):
-                    if selb is not None and sele is not None:
+                    if selb and sele:
                         insel = selb <= (cy, i) <= sele
                     else:
                         insel = False
@@ -180,10 +180,11 @@ class Drawer:
                 i += 1
             while cursh < self.full_w:
                 self.screen.change(self.top + scrcnt, self.left + cursh,
-                                   " ", self.editor.theme.get("text", False), self.prio)
+                                   " ", self.editor.theme.get(
+                                       "text", i is not None and selb and sele and selb <= (cy, i) <= sele),
+                                   self.prio)
                 cursh += 1
-                if not isend:
-                    i = None
+                i = None
             
             if not isend:
                 if cys == len(curln) - 2:
