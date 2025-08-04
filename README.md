@@ -39,6 +39,8 @@ python3 ./termed.py ./file.py  # open a file
 - GUI
 - Tree-sitter integration
 - LSP integration (may done by plugins)
+- Git integration
+- Fuzzy Finder
 # Screenshots
 You can see them in ```./pics/```
 

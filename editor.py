@@ -986,9 +986,6 @@ class TextBuffer(Buffer, FileBase):
                     "[": lambda *n: self.select_in(lambda: self.get_range_match("[", True), *n),
                     "{": lambda *n: self.select_in(lambda: self.get_range_match("{", True), *n),
                     "<": lambda *n: self.select_in(lambda: self.get_range_match("<", True), *n),
-                    "\"": lambda *n: self.select_in(lambda: self.get_range_match("\"", True), *n),
-                    "'": lambda *n: self.select_in(lambda: self.get_range_match("'", True), *n),
-                    "`": lambda *n: self.select_in(lambda: self.get_range_match("`", True), *n),
                 },
                 "a": {
                     "w": lambda *n: self.select_in(self.get_range_cur_word, *n),
@@ -997,9 +994,6 @@ class TextBuffer(Buffer, FileBase):
                     "[": lambda *n: self.select_in(lambda: self.get_range_match("["), *n),
                     "{": lambda *n: self.select_in(lambda: self.get_range_match("{"), *n),
                     "<": lambda *n: self.select_in(lambda: self.get_range_match("<"), *n),
-                    "\"": lambda *n: self.select_in(lambda: self.get_range_match("\""), *n),
-                    "'": lambda *n: self.select_in(lambda: self.get_range_match("'"), *n),
-                    "`": lambda *n: self.select_in(lambda: self.get_range_match("`"), *n),
                 },
             },
             "COMMAND": {
@@ -1084,9 +1078,6 @@ class TextBuffer(Buffer, FileBase):
                 "[": lambda *n: fn_in(lambda: self.get_range_match("[", True), *n),
                 "{": lambda *n: fn_in(lambda: self.get_range_match("{", True), *n),
                 "<": lambda *n: fn_in(lambda: self.get_range_match("<", True), *n),
-                "\"": lambda *n: fn_in(lambda: self.get_range_match("\"", True), *n),
-                "'": lambda *n: fn_in(lambda: self.get_range_match("'", True), *n),
-                "`": lambda *n: fn_in(lambda: self.get_range_match("`", True), *n),
             },
             "a": {
                 "w": lambda *n: fn_in(self.get_range_cur_word, *n),
@@ -1094,9 +1085,6 @@ class TextBuffer(Buffer, FileBase):
                 "[": lambda *n: fn_in(lambda: self.get_range_match("["), *n),
                 "{": lambda *n: fn_in(lambda: self.get_range_match("{"), *n),
                 "<": lambda *n: fn_in(lambda: self.get_range_match("<"), *n),
-                "\"": lambda *n: fn_in(lambda: self.get_range_match("\""), *n),
-                "'": lambda *n: fn_in(lambda: self.get_range_match("'"), *n),
-                "`": lambda *n: fn_in(lambda: self.get_range_match("`"), *n),
             },
         }
 
@@ -1171,7 +1159,7 @@ class TextBuffer(Buffer, FileBase):
         if res := tags_navigate(tag):
             file, (y, x) = res
             self.open_file(file)
-            if os.path.abspath(self.file) == os.path.abspath(file):
+            if self.file and os.path.abspath(self.file) == os.path.abspath(file):
                 self.y = y
                 self.x = self.ideal_x = x
 
