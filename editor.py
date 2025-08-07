@@ -2,7 +2,7 @@ from typing import Callable, NamedTuple
 from renderer import Theme, themes
 from renderers.renderers import get_renderer
 from screen import Screen, VScreen
-from utils import ed_getch, flush, get_char_type, get_file_ext, get_width
+from utils import ed_getch, flush, get_char_type, get_file_ext, get_width, log
 from drawer import Drawer
 from threading import Thread
 from buffer import BufferBase
@@ -151,6 +151,17 @@ class KeyHolder:
         self.cmdmap = {}
         self.id: int
 
+    def bind_key(self, mode: str, key: list[str], func: Callable):
+        if mode not in self.keymap:
+            self.keymap[mode] = {}
+        cur = self.keymap[mode]
+        for k in key[:-1]:
+            if k not in cur:
+                cur[k] = {}
+            cur = cur[k]
+        cur[key[-1]] = func
+
+
     def cursor_real_pos(self) -> tuple[int, int]:
         ...
 
@@ -286,7 +297,7 @@ class ThemeSelector(FloatBuffer):
             self.selected -= 1
             if self.selected < 0:
                 self.selected = len(self.options) - 1
-    
+
     def cursor_down(self, n=1):
         for _ in range(n):
             self.selected += 1
@@ -372,14 +383,14 @@ class TagSelector(FloatBuffer):
 
     def get_prio(self):
         return 1001
-    
+
     def find_cur(self) -> "Buffer | None":
         for i in reversed(self.editor.winmove_seq):
             if isinstance(self.editor.win_ids[i], TextBuffer):
                 self.editor.cur = self.editor.win_ids[i]
                 return self.editor.win_ids[i]
         return self.editor.gwin.find_buffer()
-    
+
     def quit(self, *_):
         self.hide = True
         if cur := self.find_cur():
@@ -401,7 +412,7 @@ class TagSelector(FloatBuffer):
             self.selected -= 1
             if self.selected < 0:
                 self.selected = len(self.options) - 1
-    
+
     def cursor_down(self, n=1):
         for _ in range(n):
             self.selected += 1
@@ -595,13 +606,13 @@ class Window(WindowLike):
         ...
 
     # 新窗口在右下
-    def split(self, sp_tp: bool, buf_tp = None, *args):
+    def split(self, sp_tp: bool, buf_tp = None, reserve=-1, *args):
         if self.h < 20 and sp_tp == HSplit or self.w < 40 and sp_tp == VSplit:
             return
         if buf_tp is None:
             buf_tp = TextBuffer
         if sp_tp == HSplit:
-            upper_h = self.h // 2
+            upper_h = self.h // 2 if reserve == -1 else reserve
             new_sp = Split(self.top, self.left, self.h, self.w,
                            self.editor, self.parent, sp_tp, upper_h)
             self.resize(upper_h, self.w)
@@ -609,7 +620,7 @@ class Window(WindowLike):
                              self.editor, (new_sp, True), *args)
         else:
             # log(("split", self.h, self.w, (self.w - 1) // 2))
-            left_w = (self.w - 1) // 2
+            left_w = (self.w - 1) // 2 if reserve == -1 else reserve
             new_sp = Split(self.top, self.left, self.h, self.w,
                            self.editor, self.parent, sp_tp, left_w + 1)
             new_w = self.w - left_w - 1
@@ -627,6 +638,30 @@ class Window(WindowLike):
         else:
             new_sp.editor.gwin = new_sp
 
+    def key_resize_h_add(self, n=1):
+        try:
+            self.resize_bottomup(self.h + n, self.w)
+        except:
+            pass
+
+    def key_resize_h_sub(self, n=1):
+        try:
+            self.resize_bottomup(self.h - n, self.w)
+        except:
+            pass
+
+    def key_resize_v_add(self, n=1):
+        try:
+            self.resize_bottomup(self.h, self.w + n)
+        except:
+            pass
+
+    def key_resize_v_sub(self, n=1):
+        try:
+            self.resize_bottomup(self.h, self.w - n)
+        except:
+            pass
+
 
 class Buffer(Window, KeyHolder):
     def __init__(self, top: int, left: int, h: int, w: int,
@@ -637,17 +672,20 @@ class Buffer(Window, KeyHolder):
     def find_buffer(self) -> "Buffer | None":
         return self
 
+    def resize(self, h: int, w: int):
+        Window.resize(self, self.h, self.w)
+        self.h, self.w = h, w
 
-class FileExplorer(Buffer):
-    def __init__(self, top: int, left: int, h: int, w: int,
-                 editor: "Editor", parent: "tuple[Split, bool] | None", path=None):
-        Buffer.__init__(self, top, left, h, w, editor, parent)
-        self.expanded = set()
-        self.root = os.path.abspath(os.curdir if not path or not os.path.exists(path) or not os.path.isdir(path) else path)
-        self.file_tree = self.build_tree(self.root)
+    def move(self, top: int, left: int):
+        self.left, self.top = left, top
+
+
+class MenuBuffer(Buffer):
+    def __init__(self, top, left, h, w, editor, parent):
+        super().__init__(top, left, h, w, editor, parent)
         self.scroll = 0
         self.y = 0
-        self.buffer = self.gen_buffer(self.file_tree)
+        self.buffer = []
 
         self.keymap = {
             "INSERT": {},
@@ -656,7 +694,6 @@ class FileExplorer(Buffer):
                 "k": self.cursor_up,
                 "<down>": self.cursor_down,
                 "<up>": self.cursor_up,
-                "R": self.update,
                 "g": {
                     "g": self.cursor_head,
                 },
@@ -666,22 +703,15 @@ class FileExplorer(Buffer):
                 "o": self.proc_open,
                 "<cr>": self.proc_open,
                 "<tab>": self.proc_open,
-                "c": self.proc_change_root,
-                "p": self.proc_change_to_parent,
+
+                "<C-up>": self.key_resize_h_sub,
+                "<C-down>": self.key_resize_h_add,
+                "<C-left>": self.key_resize_v_sub,
+                "<C-right>": self.key_resize_v_add,
             },
             "VISUAL": {},
             "COMMAND": {},
         }
-        self.cmdmap = {
-            "cd": self.change_root,
-        }
-
-    def resize(self, h: int, w: int):
-        Window.resize(self, self.h, self.w)
-        self.h, self.w = h, w
-
-    def move(self, top: int, left: int):
-        self.left, self.top = left, top
 
     def cursor_real_pos(self) -> tuple[int, int]:
         return self.top + self.y, self.left
@@ -707,6 +737,33 @@ class FileExplorer(Buffer):
     def cursor_pagedown(self, n: int = 1):
         for _ in range(n):
             self.y = min(len(self.buffer) - 1, self.y + self.h - 1)
+
+    def proc_open(self):
+        ...
+
+    def scroll_buffer(self, y: int):
+        if y < self.scroll:
+            self.scroll = y
+        elif y - self.h + 2 > self.scroll:
+            self.scroll = y - self.h + 2
+
+
+class FileExplorer(MenuBuffer):
+    def __init__(self, top, left, h, w, editor, parent, path=None):
+        super().__init__(top, left, h, w, editor, parent)
+        self.expanded = set()
+        self.root = os.path.abspath(os.curdir if not path or not os.path.exists(path) or not os.path.isdir(path) else path)
+        self.file_tree = self.build_tree(self.root)
+        self.scroll = 0
+        self.y = 0
+        self.buffer = self.gen_buffer(self.file_tree)
+
+        self.bind_key("NORMAL", ["c"], self.proc_change_root)
+        self.bind_key("NORMAL", ["p"], self.proc_change_to_parent)
+        self.bind_key("NORMAL", ["R"], self.update)
+        self.cmdmap = {
+            "cd": self.change_root,
+        }
 
     def proc_open(self):
         # print("proc_open", self.buffer[self.y + self.scroll])
@@ -775,12 +832,6 @@ class FileExplorer(Buffer):
                 res.append(('  ' + '  ' * level + i[0], i[1]))
         return res
 
-    def scroll_buffer(self, y: int):
-        if y < self.scroll:
-            self.scroll = y
-        elif y - self.h + 2 > self.scroll:
-            self.scroll = y - self.h + 2
-
     def update(self):
         self.file_tree = self.build_tree(self.root)
         self.buffer = self.gen_buffer(self.file_tree)
@@ -811,6 +862,65 @@ class FileExplorer(Buffer):
                           "", "sel" if self.editor.cur == self else "text", PrioBuffer)
         draw_text(self, self.top + self.h - 1, self.left, self.w,
                   "Tree: " + self.root, "modeline", PrioBuffer)
+
+
+class TagBar(MenuBuffer):
+    def __init__(self, top, left, h, w, editor, parent):
+        super().__init__(top, left, h, w, editor, parent)
+        self.scroll = 0
+        self.y = 0
+        self.file: TextBuffer | None = None
+        self.prev_file = None
+        self.update_buffer()
+
+    def find_prevbuf(self):
+        for winid in reversed(self.editor.winmove_seq):
+            if isinstance(self.editor.win_ids[winid], TextBuffer):
+                self.file = self.editor.win_ids[winid]
+                return
+        self.file = None
+
+    def update_buffer(self):
+        self.find_prevbuf()
+        if not self.file or not self.file.file:
+            self.y = 0
+            return
+        if self.prev_file and os.path.samefile(self.file.file, self.prev_file):
+            return
+        self.buffer: list[TagEntry] = []
+        file = os.path.abspath(self.file.file)
+        for _, tags in self.editor.tags.items():
+            for tag in tags:
+                if os.path.abspath(tag["path"]) == file:
+                    self.buffer.append(tag)
+        self.buffer.sort(key=lambda x: x["name"])
+        if self.y >= len(self.buffer) and len(self.buffer):
+            self.y = len(self.buffer) - 1
+
+    def proc_open(self):
+        if not self.file:
+            return
+        self.file.goto_tag(self.buffer[self.y])
+        self.editor.cur = self.file
+
+    def draw(self):
+        super().draw()
+        self.update_buffer()
+        self.prev_file = self.file.file if self.file else None
+        self.scroll_buffer(self.y)
+        for i in range(0, self.h - 1):
+            if self.scroll + i < len(self.buffer):
+                cur = self.buffer[self.scroll + i]
+                draw_text(self, self.top + i, self.left, self.w,
+                          "%s%s" % (cur["kind"] + " " if "kind" in cur else "", cur["name"]),
+                          "sel" if i + self.scroll == self.y and self.editor.cur == self else "text",
+                          PrioBuffer)
+            else:
+                draw_text(self, self.top + i, self.left, self.w,
+                          "", "text", PrioBuffer)
+        draw_text(self, self.top + self.h - 1, self.left, self.w,
+                  "TagBar: " + self.file.file if self.file and self.file.file else "TagBar",
+                  "modeline", PrioBuffer)
 
 
 class TextBuffer(Buffer, FileBase):
@@ -1107,30 +1217,6 @@ class TextBuffer(Buffer, FileBase):
         self.mode = "INSERT"
         self.editor.mode = None
 
-    def key_resize_h_add(self, n=1):
-        try:
-            self.resize_bottomup(self.h + n, self.w)
-        except:
-            pass
-
-    def key_resize_h_sub(self, n=1):
-        try:
-            self.resize_bottomup(self.h - n, self.w)
-        except:
-            pass
-
-    def key_resize_v_add(self, n=1):
-        try:
-            self.resize_bottomup(self.h, self.w + n)
-        except:
-            pass
-
-    def key_resize_v_sub(self, n=1):
-        try:
-            self.resize_bottomup(self.h, self.w - n)
-        except:
-            pass
-
     def key_enter(self, *_):
         if self.cmp_menu:
             self.cmp_menu_accept()
@@ -1406,18 +1492,18 @@ class Split(Window):
         self.win2: Window
 
     def revert(self):
-        win1size = self.win1.h, self.win1.w
-        win2size = self.win2.h, self.win2.w
-        win1pos = self.win1.top, self.win1.left
-        win2pos = self.win2.top, self.win2.left
-        self.win1.resize(*win2size)
-        self.win2.resize(*win1size)
-        self.win1.move(*win2pos)
-        self.win2.move(*win1pos)
+        # self.win1.resize(*win2size)
+        # self.win2.resize(*win1size)
+        self.sp_pos = self.win2.h if self.sp_tp == HSplit else self.win2.w + 1
         self.win1.parent = self, True
         self.win2.parent = self, False
         self.win1, self.win2 = self.win2, self.win1
-        self.sp_pos = self.win1.h if self.sp_tp == HSplit else self.win1.w + 1
+        if self.sp_tp == HSplit:
+            self.win1.move(self.top, self.left)
+            self.win2.move(self.top + self.sp_pos, self.left)
+        else:
+            self.win1.move(self.top, self.left)
+            self.win2.move(self.top, self.left + self.sp_pos)
 
     def change_pos(self, pos: int, ignore_id=-1):
         if self.sp_tp == VSplit:
@@ -1562,6 +1648,7 @@ class Editor:
             "selectheme": self.accept_cmd_selectheme,
             "addtags": self.accept_cmd_add_tags,
             "cleartags": self.accept_cmd_clear_tags,
+            "tagbar": self.accept_cmd_tagbar,
         }
         self.mode: None | str = None  # BufferHold/EditorHold
         self.cur_cmd = ""
@@ -1569,8 +1656,8 @@ class Editor:
         self.message = ""
         self.floatwins: list[FloatWin] = []
 
-        self.tagsfile = []
-        self.tags = {}
+        self.tagsfile: list[str] = []
+        self.tags: dict[str, list[TagEntry]] = {}
 
         self.debug_points: list[tuple[int, int]] = []
 
@@ -1693,10 +1780,10 @@ class Editor:
             pass
 
     def open_explorer(self, *_):
-        self.gwin.split(VSplit, FileExplorer)
+        self.gwin.split(VSplit, FileExplorer, reserve=self.w - 1 - max(30, self.w // 5))
         if isinstance(self.gwin, Split):
             self.gwin.revert()
-            self.gwin.win1.resize_bottomup(self.gwin.win1.h, max(30, self.w // 5))
+            # self.gwin.win1.resize_bottomup(self.gwin.win1.h, max(30, self.w // 5))
 
     def key_winmove_right(self, *_):
         if not isinstance(self.cur, Buffer):
@@ -1776,6 +1863,9 @@ class Editor:
     def accept_cmd_clear_tags(self, *_):
         self.tagsfile.clear()
         self.tags.clear()
+
+    def accept_cmd_tagbar(self, *_):
+        self.gwin.split(VSplit, TagBar, reserve=self.w - 1 - max(30, self.w // 5))
 
     def start_tagselect(self, tags: list[TagEntry]):
         self.tag_selector.start(tags)
