@@ -7,7 +7,8 @@ from drawer import Drawer
 from threading import Thread
 from buffer import BufferBase
 from ederrors import *
-from tagparse import parse_tags_file, tags_navigate, merge_tags, TagEntry
+from tagparse import parse_tags_file, tags_navigate, merge_tags, TagEntry, FileEntry
+from fuzzy import fuzzy_find
 import os
 
 
@@ -28,7 +29,7 @@ def draw_text(self: "WindowLike", top: int, left: int, width: int, text: str, tp
     shw = 0
     color = self.editor.theme.get(tp, False)
     start = 0
-    if (sumw := sum(map(get_width, text))) > width and rev:
+    if rev and (sumw := sum(map(get_width, text))) > width:
         while start < len(text) and sumw > width:
             start += 1
             sumw -= get_width(text[start - 1])
@@ -345,6 +346,277 @@ class ThemeSelector(FloatBuffer):
         super().draw()
 
 
+class InputBox(FloatBuffer):
+    def insert(self, text: str):
+        ...
+
+
+# 2025-8-8
+# 应该是目前看来最复杂的一个FloatWin
+# 不过仍然没法跟初期的逆天绘制相比
+# 毕竟基础设施都成熟了，经验也积累起来了
+class FuzzyFinder(InputBox):
+    def __init__(self, editor: "Editor"):
+        super().__init__(0, 0, 10, 10, editor, None)
+        self.set_pos()
+
+        self.options: list[str] = []
+        self.fdentry: FileEntry | None = None
+        self.selected = 0
+        self.scroll = 0
+
+        self.x = 0
+        self.xscroll = 0
+        self.input_text = ""
+
+        self.keymap = {
+            "INSERT": {
+                "<up>": self.select_up,
+                "<down>": self.select_down,
+                "<tab>": self.select_down,
+                "<C-n>": self.select_down,
+                "<C-p>": self.select_up,
+                "<pageup>": self.select_pageup,
+                "<pagedown>": self.select_pagedown,
+                "<left>": self.input_left,
+                "<right>": self.input_right,
+                "<home>": self.input_head,
+                "<end>": self.input_tail,
+                "<bs>": self.input_backspace,
+                "<del>": self.input_delete,
+                "<cr>": self.accept,
+                "<esc>": self.quit,
+            },
+            "NORMAL": {},
+            "VISUAL": {},
+            "COMMAND": {},
+        }
+
+        self.refill()
+        self.hide = False
+        self.title = "Fuzzy Finder"
+
+    def find_cur(self) -> "Buffer | None":
+        for i in reversed(self.editor.winmove_seq):
+            if isinstance(self.editor.win_ids[i], TextBuffer):
+                self.editor.cur = self.editor.win_ids[i]
+                return self.editor.win_ids[i]
+        return self.editor.gwin.find_buffer()
+
+    def remove_self(self):
+        self.editor.floatwins.remove(self)
+
+    def accept(self, *_):
+        self.hide = True
+        if cur := self.find_cur():
+            self.editor.cur = cur
+            if isinstance(self.editor.cur, TextBuffer):
+                self.editor.cur.goto_entry(self.fdentry)
+        else:
+            self.editor.quit_editor()
+        self.remove_self()
+
+    def quit(self, *_):
+        self.hide = True
+        if cur := self.find_cur():
+            self.editor.cur = cur
+        else:
+            self.editor.quit_editor()
+        self.remove_self()
+
+    def select_up(self, *_):
+        self.selected -= 1
+        if self.selected < 0:
+            self.selected = max(0, len(self.options) - 1)
+        self.fill_preview()
+
+    def select_down(self, *_):
+        self.selected += 1
+        if self.selected >= len(self.options):
+            self.selected = 0
+        self.fill_preview()
+
+    def select_pageup(self, *_):
+        self.selected = max(self.selected - self.menu_h, 0)
+        self.fill_preview()
+
+    def select_pagedown(self, *_):
+        self.selected = min(self.selected + self.menu_h, len(self.options) - 1)
+        self.fill_preview()
+
+    def input_left(self, *_):
+        self.x = max(self.x - 1, 0)
+
+    def input_right(self, *_):
+        self.x = min(self.x + 1, len(self.input_text))
+    
+    def input_head(self, *_):
+        self.x = 0
+
+    def input_tail(self, *_):
+        self.x = len(self.input_text)
+
+    def input_backspace(self, *_):
+        if self.x > 0:
+            self.input_text = self.input_text[:self.x - 1] + self.input_text[self.x:]
+            self.x -= 1
+            self.refill()
+
+    def input_delete(self, *_):
+        if self.x < len(self.input_text):
+            self.input_text = self.input_text[:self.x] + self.input_text[self.x + 1:]
+            self.refill()
+
+    def insert(self, text: str):
+        self.input_text = self.input_text[:self.x] + text + self.input_text[self.x:]
+        self.x += len(text)
+        self.refill()
+
+    # 这个应由子类实现
+    # 可恶，都多少层继承了
+    def source(self):
+        ...
+
+    def fill_preview(self):
+        ...
+
+    def refill(self):
+        prev_select = self.options[self.selected] if self.options else None
+        self.source()
+        if prev_select and prev_select in self.options:
+            self.selected = self.options.index(prev_select)
+        else:
+            self.selected = 0
+        self.fill_preview()
+
+    def set_pos(self):
+        self.move(self.editor.h // 8, self.editor.w // 8)
+        self.resize(self.editor.h // 4 * 3, self.editor.w // 4 * 3)
+        self.menu_h = self.h - 4
+        self.optsw = self.v_screen.w // 3
+
+    def set_scroll(self):
+        if self.selected < self.scroll:
+            self.scroll = self.selected
+        elif self.selected - self.menu_h >= self.scroll:
+            self.scroll = self.selected - self.menu_h + 1
+
+        if self.x < self.xscroll:
+            self.xscroll = self.x
+        else:
+            inputw = self.optsw - 1
+            curw = 0
+            i = self.x - 1
+            for i in range(self.x - 1, -1, -1):
+                iw = get_width(self.input_text[i])
+                if curw + iw > inputw:
+                    break
+                curw += iw
+            if i > self.xscroll:
+                self.xscroll = i
+
+    def get_prio(self):
+        return 1001
+
+    def fill_screen(self):
+        self.set_pos()
+        self.set_scroll()
+        prio = self.get_prio()
+        draw_text(
+            self, self.v_screen.top, self.v_screen.left, self.optsw,
+            self.input_text[self.xscroll:], "text", prio)
+        self.editor.screen.set_cursor(
+            self.v_screen.top, self.v_screen.left + sum(map(get_width, self.input_text[self.xscroll : self.x])))
+        for i in range(self.optsw):
+            self.v_screen.change(1, i, "-", self.editor.theme.get("border", False))
+        for i in range(self.menu_h):
+            draw_text(
+                self, self.v_screen.top + i + 2, self.v_screen.left, self.optsw,
+                "" if i + self.scroll >= len(self.options) else self.options[i + self.scroll],
+                "completion_selected" if i + self.scroll == self.selected else "text", prio)
+        dleft = self.v_screen.left + self.optsw + 1
+        dw = self.v_screen.w - self.optsw - 1
+        dh = self.v_screen.h
+        if self.fdentry:
+            file, (y, _) = self.fdentry
+            try:
+                with open(file, "r", encoding="utf-8") as f:
+                    lines = f.readlines()
+            except:
+                lines = ["Unsupported encoding"]
+        else:
+            file = ""
+            y = -1
+            lines = []
+        dstart = max(0, y - dh // 2) - 1
+        dstart = min(dstart, len(lines) - 1)
+        self.v_screen.change(0, self.optsw, "|", self.editor.theme.get("border", False))
+        draw_text(self, self.v_screen.top, dleft, dw, file, "text", prio, rev=True)
+        for i in range(1, dh):
+            self.v_screen.change(i, self.optsw, "|", self.editor.theme.get("border", False))
+            draw_text(self, self.v_screen.top + i, dleft, dw,
+                      "" if dstart + i >= len(lines) else lines[dstart + i].replace("\n", "").replace("\r", ""),
+                      "completion_selected" if dstart + i == y else "text", prio)
+
+    def draw(self):
+        if self.hide:
+            return
+        self.fill_screen()
+        super().draw()
+
+
+class FuzzyTags(FuzzyFinder):
+    def __init__(self, editor):
+        super().__init__(editor)
+        self.title = "Fuzzy Tags"
+
+    def source(self):
+        self.optex = []
+        self.options = []
+        options = []
+        optexs = []
+        for tags in self.editor.tags.values():
+            for tag in tags:
+                options.append(tag["name"])
+                optexs.append(tag)
+        fuzzy = fuzzy_find(self.input_text, options)
+        for i in range(1, fuzzy[0] + 1):
+            self.options.append(options[fuzzy[i]])
+            self.optex.append(optexs[fuzzy[i]])
+
+    def fill_preview(self):
+        if self.optex:
+            self.fdentry = tags_navigate(self.optex[self.selected])
+
+
+class FuzzyFiles(FuzzyFinder):
+    def __init__(self, editor):
+        super().__init__(editor)
+        self.title = "Fuzzy Files"
+
+    def find_files(self, path: str) -> list[str]:
+        if '.git' in path:
+            return []
+        files = []
+        for file in os.listdir(path):
+            if os.path.isfile(fullpath := os.path.join(path, file)):
+                files.append(fullpath)
+            elif os.path.isdir(fullpath):
+                files.extend(self.find_files(fullpath))
+        return files
+
+    def source(self):
+        self.options = []
+        options = self.find_files(os.curdir)
+        fuzzy = fuzzy_find(self.input_text, options)
+        for i in range(1, fuzzy[0] + 1):
+            self.options.append(options[fuzzy[i]])
+
+    def fill_preview(self):
+        if self.options:
+            self.fdentry = self.options[self.selected], (0, 0)
+
+
 # 《磁盘密集型》
 # 后面也许会搞缓存
 class TagSelector(FloatBuffer):
@@ -468,7 +740,7 @@ class TagSelector(FloatBuffer):
         if res := tags_navigate(self.options[self.selected], lines):
             _, (y, _) = res
             dstart = max(0, y - displayh // 2) - 1
-            self.v_screen.change(1, optionsw, "|", self.editor.theme.get("border", False))
+            self.v_screen.change(0, optionsw, "|", self.editor.theme.get("border", False))
             draw_text(self, self.v_screen.top, dleft, displayw,
                       self.options[self.selected]["path"], "text", self.get_prio(), rev=True)
             for i in range(1, displayh):
@@ -1241,13 +1513,18 @@ class TextBuffer(Buffer, FileBase):
                 self.y = 0
         self.x = min(len(self.text[self.y]), self.ideal_x)
 
+    def goto_entry(self, entry: FileEntry | None):
+        if not entry:
+            return
+        file, (y, x) = entry
+        self.open_file(file)
+        if self.file and os.path.abspath(self.file) == os.path.abspath(file):
+            self.y = y
+            self.x = self.ideal_x = x
+
     def goto_tag(self, tag: TagEntry):
-        if res := tags_navigate(tag):
-            file, (y, x) = res
-            self.open_file(file)
-            if self.file and os.path.abspath(self.file) == os.path.abspath(file):
-                self.y = y
-                self.x = self.ideal_x = x
+        if entry := tags_navigate(tag):
+            self.goto_entry(entry)
 
     def tags_find(self, tag: str):
         # print(self.editor.tagsfile, self.editor.tags)
@@ -1306,15 +1583,27 @@ class TextBuffer(Buffer, FileBase):
             self.clear_cmp_menu()
 
     def fill_cmp_menu(self):
+        use_fuzzy = True
         menu = []
         func = []
         cw_range = self.get_range_last_word()
         if cw_range:
             cur_word = self.textinputer.get(*cw_range[0], *cw_range[1])
-            for i in sorted(self.get_all_words()):
-                if i[:len(cur_word)] == cur_word and len(i) > len(cur_word):
-                    menu.append(i)
-                    func.append(self.gen_cmp_func(i))
+            if get_char_type(cur_word[0]) != 1:
+                self.cmp_menu_update(menu, func)
+                return
+            if not use_fuzzy:
+                for i in sorted(self.get_all_words()):
+                    if i[:len(cur_word)] == cur_word and len(i) > len(cur_word):
+                        menu.append(i)
+                        func.append(self.gen_cmp_func(i))
+            else:
+                words = list(self.get_all_words())
+                fuzzy_words = fuzzy_find(cur_word, words)
+                for i in range(1, fuzzy_words[0] + 1):
+                    if (word := words[fuzzy_words[i]]) != cur_word:
+                        menu.append(word)
+                        func.append(self.gen_cmp_func(word))
         self.cmp_menu_update(menu, func)
 
     def get_all_words(self):
@@ -1618,6 +1907,10 @@ class Editor:
                     "s": {
                         "t": self.accept_cmd_selectheme,
                     },
+                    "f": {
+                        "t": self.accept_cmd_fuzzytags,
+                        "f": self.accept_cmd_fuzzyfiles,
+                    },
                 },
             },
             "VISUAL": {
@@ -1683,6 +1976,8 @@ class Editor:
         self.winmove_seq = list(filter(lambda x: x != id, self.winmove_seq))
 
     def get_mode(self):
+        if isinstance(self.cur, InputBox):
+            return "INSERT"
         if not self.mode and isinstance(self.cur, BufferBase):
             return self.cur.mode
         if not self.mode:
@@ -1867,6 +2162,14 @@ class Editor:
     def accept_cmd_tagbar(self, *_):
         self.gwin.split(VSplit, TagBar, reserve=self.w - 1 - max(30, self.w // 5))
 
+    def accept_cmd_fuzzytags(self, *_):
+        self.cur = FuzzyTags(self)
+        self.floatwins.append(self.cur)
+
+    def accept_cmd_fuzzyfiles(self, *_):
+        self.cur = FuzzyFiles(self)
+        self.floatwins.append(self.cur)
+
     def start_tagselect(self, tags: list[TagEntry]):
         self.tag_selector.start(tags)
         self.cur = self.tag_selector
@@ -2043,6 +2346,9 @@ class Editor:
                 if isinstance(self.cur, TextBuffer):
                     self.cur.insert(keyseq[0])
                     need_cmp = True
+                elif isinstance(self.cur, InputBox):
+                    self.cur.insert(keyseq[0])
+                    need_cmp = False
             elif mode == "COMMAND" and len(keyseq) == len(keyseq[0]) == 1:
                 self.cmd_insert(keyseq[0])
                 need_cmp = False

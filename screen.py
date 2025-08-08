@@ -94,7 +94,9 @@ class Screen:
         else:
             print("\033[0m", end="")
 
-        self.prio = [[0 for i in range(self.w)] for j in range(self.h)]
+        for i in range(self.h):
+            for j in range(self.w):
+                self.prio[i][j] = 0
 
 
 class VScreen:

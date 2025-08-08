@@ -1,6 +1,7 @@
 import os
 
 type TagEntry = dict[str, str]
+type FileEntry = tuple[str, tuple[int, int]]
 
 
 def parse_tags_file(tags_path: str) -> dict[str, list[TagEntry]]:
@@ -15,7 +16,7 @@ def parse_tags_file(tags_path: str) -> dict[str, list[TagEntry]]:
                 continue
             entry = {
                 'name': parts[0],
-                'path': os.path.join(tag_base, parts[1]),
+                'path': os.path.abspath(os.path.join(tag_base, parts[1])),
                 'pattern': parts[2]
             }
             for field in parts[3:]:
@@ -32,7 +33,7 @@ def parse_tags_file(tags_path: str) -> dict[str, list[TagEntry]]:
     return tags
 
 
-def tags_navigate(entry: TagEntry, lines: list[str] | None = None) -> tuple[str, tuple[int, int]] | None:
+def tags_navigate(entry: TagEntry, lines: list[str] | None = None) -> FileEntry | None:
     file = entry['path']
     if not os.path.exists(file) or not os.path.isfile(file):
         return
