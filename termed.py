@@ -1,7 +1,7 @@
 from utils import clear, reset_term
 
 try:
-    import editor
+    import editor as core
     from os import get_terminal_size
     import sys
     from renderers.renderers import finalize
@@ -13,7 +13,7 @@ try:
         kernel32 = ctypes.windll.kernel32
         kernel32.SetConsoleMode(kernel32.GetStdHandle(-11), 7)
 
-    editor = editor.Editor(get_terminal_size().lines, get_terminal_size().columns)
+    editor = core.Editor(get_terminal_size().lines, get_terminal_size().columns)
     if len(sys.argv) > 1:
         if isinstance(editor.cur, TextBuffer):
             editor.cur.open_file(sys.argv[1])

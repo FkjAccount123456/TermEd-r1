@@ -579,6 +579,7 @@ class BufferBase:
         self.textinputer.cur_history = self.textinputer.cur_history.add(
             History(HistoryType.Refill, (self.y, self.x), (0, 0), "",
                     (from_text, deepcopy(self.text))))
+        self.renderer.render_all()
 
     def find_next(self):
         # 有点Rust的意思了（

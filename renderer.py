@@ -3,20 +3,29 @@ import copy
 
 
 class Renderer:
-    def __init__(self, text: list[str]):
+    def __init__(self, text: list[str], fill=None):
+        self.fill = fill
         self.text = text
         self.change_points = []
-        self.states: list[list[int]] = copy_structure(text, fill=-1)
-        self.results: list[list[int]] = copy_structure(text, fill=-1)
+        self.all_tochange = []
+
+    def render_all(self):
+        ...
+
+    def pre_insert(self, y: int, x: int, text: str):
+        ...
+
+    def pre_delete(self, y: int, x: int, q: int, p: int):
+        ...
 
     def insert(self, y: int, x: int, text: str):
         self.change_points.append((y, x))
-        for data in (self.states, self.results):
+        for data in self.all_tochange:
+            tmp = 0
             for ch in text:
-                tmp = 0
                 if ch == "\n":
                     data.insert(y + 1, data[y][x:])
-                    data[y] = data[y][:x] + [-1] * tmp
+                    data[y] = data[y][:x] + [self.fill] * tmp
                     y += 1
                     x = 0
                     tmp = 0
@@ -24,10 +33,14 @@ class Renderer:
                     pass
                 else:
                     tmp += 1
+            if tmp:
+                data[y] = data[y][:x] + [self.fill] * tmp + data[y][x:]
+                x += tmp
+        return y, x
 
     def delete(self, y: int, x: int, q: int, p: int):
         self.change_points.append((y, x))
-        for data in (self.states, self.results):
+        for data in self.all_tochange:
             if y == q:
                 if p == len(data[y]):
                     data[y] = data[y][:x]
@@ -55,8 +68,9 @@ class Renderer:
 
     def clear(self):
         self.change_points = []
-        self.states = [[]]
-        self.results = [[]]
+        for i in self.all_tochange:
+            i.clear()
+            i.append([])
 
     def get_indent(self, y: int) -> str:
         return ""
@@ -71,15 +85,18 @@ class Theme:
                 color = d[color]
             self.d[i] = colorcvt(color[0]), colorcvt(color[1]), [] if len(color) == 2 else stylecvt(color[2])
 
+    def __getitem__(self, item):
+        return self.d.get(item, self.d["text"])
+
     def get(self, token: str, insel: bool):
-        style = self.d[token][2]
+        style = self[token][2]
         if insel:
-            if self.d[token][1] == self.d["sel"][0]:
-                return cvt_truecolor(self.d["sel"][0], self.d["bg"][1], style)
-            return cvt_truecolor(self.d["sel"][0], self.d[token][1], style)
-        if self.d[token][0] != 0:
-            return cvt_truecolor(self.d[token][0], self.d[token][1], style)
-        return cvt_truecolor(self.d["bg"][0], self.d[token][1], style)
+            if self[token][1] == self["sel"][0]:
+                return cvt_truecolor(self["sel"][0], self["bg"][1], style)
+            return cvt_truecolor(self["sel"][0], self[token][1], style)
+        if self[token][0] != 0:
+            return cvt_truecolor(self[token][0], self[token][1], style)
+        return cvt_truecolor(self["bg"][0], self[token][1], style)
 
 
 # 懒得写了
@@ -97,6 +114,89 @@ class Theme:
 #     "comment": (0x282828, 0x928374),
 #     "op": (0x282828, 0xEBDBB2),
 # }
+
+ts_compat = {
+    "keyword": "kw",
+    "keyword.type": "kwclass",
+    "keyword.function": "kwfunc",
+    "keyword.operator": "op",
+    "keyword.return": "kwreturn",
+    "keyword.repeat": "kwrepeat",
+    "keyword.coroutine": "kwcoroutine",
+    "keyword.exception": "kwexception",
+    "keyword.conditional": "kwcond",
+    "keyword.directive": "kwpreproc",
+    "keyword.directive.define": "kwpreproc",
+    "keyword.import": "kwpreproc",
+    "keyword.control": "kw",
+    "keyword.control.import": "kwpreproc",
+    "keyword.control.exception": "kwexception",
+    "keyword.control.conditional": "kwcond",
+    "keyword.control.return": "kwreturn",
+    "keyword.control.repeat": "kwrepeat",
+    "keyword.storage.type": "kw",
+    "keyword.storage.modifier": "kw",
+    "keyword.storage.class": "kwclass",
+    "keyword.storage.function": "kwfunc",
+    "keyword.storage.namespace": "kw",
+    "namespace": "module",
+    "module.builtin": "module",
+    "punctuation.delimiter": "op",
+    "punctuation.special": "op",
+    "punctuation.bracket": "op",
+    "operator": "op",
+    "boolean": "const",
+    "keyword.conditional.ternary": "kwcond",
+    "string": "str",
+    "string.escape": "escape",
+    "constant.builtin": "const",
+    "constant.numeric.integer": "num",
+    "constant.numeric": "num",
+    "constant.character": "str",
+    "constant.character.escape": "escape",
+    "constant.builtin.boolean": "const",
+    "type.enum.variant": "const",
+    "number": "num",
+    "number.float": "num",
+    "character": "str",
+    "function.macro": "const",  # 待定
+    "function.special": "func",
+    "function.method": "func",
+    "property": "field",
+    "_parent": "field",
+    "template_method": "func",
+    "function_declarator": "func",
+    "field_declaration": "field",
+    "variable.member": "field",
+    "variable.other.member": "field",
+    "label": "id",
+    "_type": "class",
+    "type": "class",
+    "keyword.modifier": "kw",
+    "type.definition": "class",
+    "type.builtin": "class",
+    "constant": "const",
+    "variable.builtin": "param",
+    "function.builtin": "func",
+    "constant.macro": "const",  # 待定
+    "function.call": "func",
+    "function.method.call": "func",
+    "spell": "comment",
+    "comment.documentation": "comment",
+    "variable.parameter": "param",
+    "attribute": "kw",
+    "attribute.builtin": "kw",
+    "function": "func",
+    "character.special": "id",
+    "constructor": "func",
+    "variable": "id",
+    "string.documentation": "str",
+    "_re": "str",
+    "re": "str",
+    "string.regexp": "str",
+    "none": "text",
+    "": "text",
+}
 
 onedark_theme = {
     "bg": (0x282C34, 0x000000),
@@ -131,7 +231,7 @@ onedark_theme = {
     "completion": (0x242830, 0xABB2BF),
     "completion_selected": (0x3E4452, 0xABB2BF),
     "border": (0x282C34, 0xABB2BF),
-}
+} | ts_compat
 
 tokyonight_storm_theme = {
     "bg": (0x24283B, 0x000000),
@@ -166,7 +266,7 @@ tokyonight_storm_theme = {
     "completion": (0x242830, 0xC0CAF5),
     "completion_selected": (0x3D59A1, 0xC0CAF5),
     "border": (0x24283B, 0xC0CAF5),
-}
+} | ts_compat
 
 themes = {
     "onedark": onedark_theme,

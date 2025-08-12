@@ -21,3 +21,4 @@ main-temp.py
 .fleet/
 test*
 *project/
+queries/*

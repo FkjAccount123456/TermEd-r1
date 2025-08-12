@@ -2,7 +2,7 @@ from typing import Callable, NamedTuple
 from renderer import Theme, themes
 from renderers.renderers import get_renderer
 from screen import Screen, VScreen
-from utils import ed_getch, flush, get_char_type, get_file_ext, get_width, log
+from utils import ed_getch, flush, get_char_type, get_file_ext, get_width, log, gotoxy
 from drawer import Drawer
 from threading import Thread
 from buffer import BufferBase
@@ -1250,6 +1250,8 @@ class TextBuffer(Buffer, FileBase):
                 "<C-w>": self.del_word_before_cursor,
             },
             "NORMAL": {
+                "K": self.debug_inspect,
+
                 "i": self.mode_insert,
                 "v": self.mode_select,
 
@@ -1391,6 +1393,13 @@ class TextBuffer(Buffer, FileBase):
             "s": self.start_substitute,
             "tag": self.tags_find,
         }
+
+    def debug_inspect(self, *n):
+        try:
+            gotoxy(self.editor.h, 1)
+            print(self.renderer.get(self.y, self.x), end=" ")
+        except:
+            pass
 
     def close(self):
         super().close()

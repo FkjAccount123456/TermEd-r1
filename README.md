@@ -5,6 +5,7 @@ TermEd, short for Terminal Editor, is an editor with unicode support, window spl
 ``` bash
 git clone https://github.com/FkjAccount123456/TermEd.git
 ```
+- Download Tree-sitter queries from <https://github.com/nvim-treesitter/nvim-treesitter/tree/master/queries> and put them in ```./queries/```.
 - Install Python Dependencies
 ``` bash
 pip3 install -r requirements.txt
@@ -27,20 +28,20 @@ python3 ./termed.py ./file.py  # open a file
 - Unicode support
 - Windows spliting (, resizing and switching)
 - Vim-like model editing
-- Python highlighting
+- Code highlighting (tree-sitter based)
 - Word completion (experimental)
 - Linux support
 - File explorer (experimental, primary)
 - Floating window
 - Auto indent (primary)
 - CTags integration (primary)
+- Fuzzy Finder (primary)
+- Tree-sitter integration (unstable)
 # Todo List
 - Builtin configuration language
 - GUI
-- Tree-sitter integration
 - LSP integration (may done by plugins)
 - Git integration
-- Fuzzy Finder
 # Screenshots
 You can see them in ```./pics/```
 

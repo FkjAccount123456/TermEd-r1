@@ -7,6 +7,7 @@
 ``` bash
 git clone https://github.com/FkjAccount123456/TermEd.git
 ```
+- Download Tree-sitter queries from <https://github.com/nvim-treesitter/nvim-treesitter/tree/master/queries> and put them in ```./queries/```.
 - Install Python Dependencies
 ``` bash
 pip3 install -r requirements.txt
@@ -29,6 +30,8 @@ Repeat time can be specified behind operations. Specifying counts for text objec
 There are also something different from Vim:
 - When entering ```<C-]>```, TermEd will find the symbol under cursor and jump to it according to tags file, or pop up a float window for selecting a definition if there are multiple definitions.
 - ```;st``` can be used to select a theme, a window will pop up and the changes can be immediately shown in the editor.
+- ```;ff``` to find a file with fuzzy finder.
+- ```;ft``` to find a tag with fuzzy finder.
 ## Commands
 Use ```:``` to enter command mode just like Vim.
 File operations are similar to Vim, but abbreviations like ```:wq``` is not supported.

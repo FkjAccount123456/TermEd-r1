@@ -111,6 +111,7 @@ class TextInputer:
                 self.text.clear()
                 if hs.refill:
                     self.text.extend(hs.refill[0])
+                self.parent.renderer.render_all()
                 return hs.begin
 
     def redo(self):
@@ -125,6 +126,7 @@ class TextInputer:
                 self.text.clear()
                 if hs.refill:
                     self.text.extend(hs.refill[1])
+                self.parent.renderer.render_all()
                 return hs.begin
 
     def clear(self):
@@ -145,6 +147,7 @@ class TextInputer:
         begin = 0, 0
         if not is_do:
             begin = y, x
+        self.parent.renderer.pre_insert(*begin, text)
         yb = y
         tmp = ""
         for ch in text:
@@ -182,7 +185,7 @@ class TextInputer:
         if not is_do:
             self.cur_history = self.cur_history.add(
                 History(HistoryType.Delete, (y, x), (q, p), self.get(y, x, q, p)))
-        self.parent.renderer.delete(y, x, q, p)
+        self.parent.renderer.pre_delete(y, x, q, p)
         if y == q:
             if p == len(self.text[y]):
                 self.text[y] = self.text[y][:x]
@@ -207,6 +210,7 @@ class TextInputer:
             if y + 1 < len(self.text):
                 self.text[y] += self.text[y + 1]
                 del self.text[y + 1]
+        self.parent.renderer.delete(y, x, q, p)
         return y, x
 
     def get(self, y: int, x: int, q: int, p: int):
