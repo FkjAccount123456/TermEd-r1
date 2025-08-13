@@ -7,7 +7,13 @@ from .plaintext import PlainTextRenderer
 
 
 def read_scm(lang: SupportedLanguage) -> str:
-    scm_file = os.path.join(os.path.dirname(__file__), os.pardir, "queries", lang, "highlights.scm")
+    scm_file = os.path.join(
+        os.path.dirname(__file__),
+        os.pardir,
+        "external/nvim-treesitter/queries",
+        lang,
+        "highlights.scm",
+    )
     with open(scm_file, "r", encoding="utf-8") as f:
         queries = f.read()
     return queries
@@ -16,7 +22,7 @@ def read_scm(lang: SupportedLanguage) -> str:
 def preprocess_query(query_text):
     processed = query_text.replace("#lua-match?", "#match?")
     if query_text.startswith("; inherits: "):
-        inherits = query_text[12:query_text.find("\n")].split(',')
+        inherits = query_text[12 : query_text.find("\n")].split(',')
         for i in inherits:
             processed += '\n' + preprocess_query(read_scm(i.strip()))
     return processed
@@ -60,7 +66,7 @@ def gen_renderer(lang: SupportedLanguage) -> type[Renderer]:
                     lb += len(new)
                 btext += new
             return btext, lb
-        
+
         def get_as_bytes2(self, y: int, x: int, q: int, p: int):
             lb, rb = 0, 0
             btext = b""
@@ -68,7 +74,7 @@ def gen_renderer(lang: SupportedLanguage) -> type[Renderer]:
                 if i == y:
                     lb += len(bytes(line[:x], 'utf-8'))
                 if i == q:
-                    rb += len(bytes(line[:p + 1], 'utf-8'))
+                    rb += len(bytes(line[: p + 1], 'utf-8'))
                     if p == len(line):
                         rb += 1
                 new = bytes(line, 'utf-8') + (b'\n' if i != len(self.text) - 1 else b'')
@@ -78,7 +84,7 @@ def gen_renderer(lang: SupportedLanguage) -> type[Renderer]:
                     rb += len(new)
                 btext += new
             return btext, lb, rb
-            
+
         def render_inrange(self, lb: int, rb: int):
             text = self.text
             buf = self.buf
@@ -91,7 +97,14 @@ def gen_renderer(lang: SupportedLanguage) -> type[Renderer]:
                 if group.startswith('_'):
                     continue
                 for node in nodes:
-                    qdict[(node.start_point[0], node.start_point[1], node.end_point[0], node.end_point[1])] = group
+                    qdict[
+                        (
+                            node.start_point[0],
+                            node.start_point[1],
+                            node.end_point[0],
+                            node.end_point[1],
+                        )
+                    ] = group
             for (y, x, q, p), group in qdict.items():
                 x = calc_unicodex(text[y], x)
                 if x < len(buf[y]) and buf[y][x] == group:
@@ -104,17 +117,21 @@ def gen_renderer(lang: SupportedLanguage) -> type[Renderer]:
                     if x >= len(buf[y]):
                         y, x = y + 1, 0
 
-        def pre_insert(self, y: int, x: int, text: str):
-            ...
-        
+        def pre_insert(self, y: int, x: int, text: str): ...
+
         def insert(self, y: int, x: int, text: str):
             btext, lb = self.get_as_bytes(y, x)
             bx = len(bytes(self.text[y][:x], 'utf-8'))
             ny, nx = super().insert(y, x, text)
             bnx = len(bytes(self.text[y][:nx], 'utf-8'))
-            self.tree.edit(start_point=(y, bx), old_end_point=(y, bx), new_end_point=(ny, bnx),
-                           start_byte=lb, old_end_byte=lb,
-                           new_end_byte=lb + len(bytes(text, 'utf-8')))
+            self.tree.edit(
+                start_point=(y, bx),
+                old_end_point=(y, bx),
+                new_end_point=(ny, bnx),
+                start_byte=lb,
+                old_end_byte=lb,
+                new_end_byte=lb + len(bytes(text, 'utf-8')),
+            )
             new_tree = parser.parse(btext, self.tree)
             changes = new_tree.changed_ranges(self.tree)
             self.tree = new_tree
@@ -134,9 +151,14 @@ def gen_renderer(lang: SupportedLanguage) -> type[Renderer]:
             bx = len(bytes(self.text[y][:x], 'utf-8'))
             lb, rb = self.dbset
             btext, *_ = self.get_as_bytes(0, 0)
-            self.tree.edit(start_point=(y, bx), old_end_point=(q, bp), new_end_point=(y, bx),
-                           start_byte=lb, old_end_byte=rb,
-                           new_end_byte=lb)
+            self.tree.edit(
+                start_point=(y, bx),
+                old_end_point=(q, bp),
+                new_end_point=(y, bx),
+                start_byte=lb,
+                old_end_byte=rb,
+                new_end_byte=lb,
+            )
             new_tree = parser.parse(btext, self.tree)
             changes = new_tree.changed_ranges(self.tree)
             self.tree = new_tree
@@ -145,10 +167,10 @@ def gen_renderer(lang: SupportedLanguage) -> type[Renderer]:
             lb = min(map(lambda x: x.start_byte, changes))
             rb = max(map(lambda x: x.end_byte, changes))
             self.render_inrange(lb, rb)
-        
+
         def render(self, *_):
             pass
-        
+
         def get(self, y: int, x: int) -> str:
             return self.buf[y][x]
 
