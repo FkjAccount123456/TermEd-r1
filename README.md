@@ -3,9 +3,8 @@ TermEd, short for Terminal Editor, is an editor with unicode support, window spl
 # Usage
 - Clone the repo
 ``` bash
-git clone https://github.com/FkjAccount123456/TermEd.git
+git clone --recursive https://github.com/FkjAccount123456/TermEd.git
 ```
-- Download Tree-sitter queries from <https://github.com/nvim-treesitter/nvim-treesitter/tree/master/queries> and put them in ```./queries/```.
 - Install Python Dependencies
 ``` bash
 pip3 install -r requirements.txt
