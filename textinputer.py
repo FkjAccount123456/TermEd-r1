@@ -5,7 +5,8 @@
 
 from enum import Enum, unique
 import time
-from utils import log
+import os
+from utils import log, gotoxy
 from renderer import Renderer
 
 
@@ -143,10 +144,11 @@ class TextInputer:
         self.renderer = renderer
 
     def insert(self, y: int, x: int, text: str, is_do=False):
+        if not text:
+            return y, x
         assert y < len(self.text) and x <= len(self.text[y])
-        begin = 0, 0
-        if not is_do:
-            begin = y, x
+        text = text.replace("\r", "")
+        begin = y, x
         self.parent.renderer.pre_insert(*begin, text)
         yb = y
         tmp = ""

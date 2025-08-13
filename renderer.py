@@ -1,4 +1,5 @@
-from utils import colorcvt, cvt_truecolor, copy_structure, stylecvt, ed_getch
+from utils import colorcvt, cvt_truecolor, copy_structure, stylecvt, ed_getch, gotoxy
+import os
 import copy
 
 
@@ -6,8 +7,8 @@ class Renderer:
     def __init__(self, text: list[str], fill=None):
         self.fill = fill
         self.text = text
-        self.change_points = []
         self.all_tochange = []
+        self.buf: list[list[str]]
 
     def render_all(self):
         ...
@@ -19,27 +20,33 @@ class Renderer:
         ...
 
     def insert(self, y: int, x: int, text: str):
-        self.change_points.append((y, x))
         for data in self.all_tochange:
+            if x > 0:
+                fill = data[y][x - 1]
+            else:
+                tmp = y
+                while tmp > 0 and not data[tmp - 1]:
+                    tmp -= 1
+                if tmp > 0:
+                    fill = data[tmp - 1][-1]
+                else:
+                    fill = self.fill
             tmp = 0
             for ch in text:
                 if ch == "\n":
                     data.insert(y + 1, data[y][x:])
-                    data[y] = data[y][:x] + [self.fill] * tmp
+                    data[y] = data[y][:x] + [fill] * tmp
                     y += 1
                     x = 0
                     tmp = 0
-                elif ch == "\r":
-                    pass
                 else:
                     tmp += 1
             if tmp:
-                data[y] = data[y][:x] + [self.fill] * tmp + data[y][x:]
+                data[y] = data[y][:x] + [fill] * tmp + data[y][x:]
                 x += tmp
         return y, x
 
     def delete(self, y: int, x: int, q: int, p: int):
-        self.change_points.append((y, x))
         for data in self.all_tochange:
             if y == q:
                 if p == len(data[y]):

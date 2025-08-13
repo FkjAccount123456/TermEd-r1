@@ -36,7 +36,7 @@ python3 ./termed.py ./file.py  # open a file
 - Auto indent (primary)
 - CTags integration (primary)
 - Fuzzy Finder (primary)
-- Tree-sitter integration (unstable)
+- Tree-sitter integration (primary)
 # Todo List
 - Builtin configuration language
 - GUI
