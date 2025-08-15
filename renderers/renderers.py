@@ -24,16 +24,19 @@ def init_mp():
 
 
 def read_scm(lang) -> str:
-    scm_file = os.path.join(os.path.dirname(__file__), os.pardir, "queries", lang, "highlights.scm")
-    with open(scm_file, "r", encoding="utf-8") as f:
-        queries = f.read()
-    return queries
+    scm_file = os.path.join(
+        os.path.dirname(__file__),
+        os.pardir,
+        "external/nvim-treesitter/queries",
+        lang,
+        "highlights.scm",
+    )
 
 
 def preprocess_query(query_text):
     processed = query_text.replace("#lua-match?", "#match?")
     if query_text.startswith("; inherits: "):
-        inherits = query_text[12:query_text.find("\n")].split(',')
+        inherits = query_text[12 : query_text.find("\n")].split(',')
         for i in inherits:
             processed += '\n' + preprocess_query(read_scm(i.strip()))
     return processed
