@@ -31,6 +31,9 @@ def read_scm(lang) -> str:
         lang,
         "highlights.scm",
     )
+    with open(scm_file, "r", encoding="utf-8") as f:
+        queries = f.read()
+    return queries
 
 
 def preprocess_query(query_text):
