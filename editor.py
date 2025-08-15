@@ -4,7 +4,7 @@ from renderers.renderers import get_renderer
 from screen import Screen, VScreen
 from utils import ed_getch, flush, get_char_type, get_file_ext, get_width, log, gotoxy
 from drawer import Drawer
-from threading import Thread
+import multiprocessing as mp
 from buffer import BufferBase
 from ederrors import *
 from tagparse import parse_tags_file, tags_navigate, merge_tags, TagEntry, FileEntry
@@ -16,6 +16,11 @@ def get_terminal_size():
     w, h = os.get_terminal_size()
     # h -= 1
     return w, h
+
+
+def getch_process(q: mp.Queue):
+    while True:
+        q.put(ed_getch())
 
 
 HSplit, VSplit = False, True
@@ -1894,11 +1899,12 @@ class Editor:
         self.theme_name = "tokyonight-storm"
         self.theme = Theme(themes[self.theme_name])
         self.linum = True
-        self.async_update_size = False
         self.cur: KeyHolder = TextBuffer(0, 0, self.h - 1, self.w, self, None)
         self.gwin: Window = self.cur
         self.running = False
         self.cur_key: str = ""
+        self.reader_queue = mp.Queue()
+        self.reader = mp.Process(target=getch_process, args=(self.reader_queue,), daemon=True)
         # self.getch_thread = Thread(target=self.getch, args=(), daemon=True)
 
         # 记得手动注册<cr> <tab> <space>
@@ -2262,22 +2268,23 @@ class Editor:
         if (self.w, self.h) != (new_size := get_terminal_size()):
             self.resize(new_size[1], new_size[0])
             self.draw()
-
-    def getch(self):
-        self.cur_key = ed_getch()
+        else:
+            need_update = False
+            for win in self.fb_maps.values():
+                for win in win:
+                    if not self.reader_queue.empty():
+                        return
+                    if win.renderer.check_update():
+                        need_update = True
+                        break
+                    break
+            if need_update and self.reader_queue.empty():
+                self.draw()
 
     def async_getch(self) -> str:
-        if self.async_update_size:
-            self.cur_key = ""
-            getch_thread = Thread(target=self.getch, args=(), daemon=True)
-            getch_thread.start()
-
-            while not self.cur_key:
-                self.update_size()
-            return self.cur_key
-        else:
+        while self.reader_queue.empty():
             self.update_size()
-            return ed_getch()
+        return self.reader_queue.get()
 
     def read_keyseq(self, source: Callable) -> list[str] | tuple[int, Callable, list[str]]:
         key = source()
@@ -2328,6 +2335,7 @@ class Editor:
     def mainloop(self):
         self.running = True
         need_cmp = False
+        self.reader.start()
 
         while self.running:
             if need_cmp and isinstance(self.cur, TextBuffer):

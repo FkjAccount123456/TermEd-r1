@@ -8,7 +8,6 @@ class Renderer:
         self.fill = fill
         self.text = text
         self.all_tochange = []
-        self.buf: list[list[str]]
 
     def render_all(self):
         ...
@@ -19,7 +18,7 @@ class Renderer:
     def pre_delete(self, y: int, x: int, q: int, p: int):
         ...
 
-    def insert(self, y: int, x: int, text: str):
+    def insert(self, y: int, x: int, q: int, p: int, text: str):
         for data in self.all_tochange:
             if x > 0:
                 fill = data[y][x - 1]
@@ -69,6 +68,9 @@ class Renderer:
 
     def render(self, ln: int, col: int):
         ...
+
+    def check_update(self):
+        return False
 
     def get(self, y: int, x: int) -> str:
         return "text"
@@ -183,7 +185,7 @@ ts_compat = {
     "type.definition": "class",
     "type.builtin": "class",
     "constant": "const",
-    "variable.builtin": "param",
+    "variable.builtin": "thisparam",
     "function.builtin": "func",
     "constant.macro": "const",  # 待定
     "function.call": "func",
