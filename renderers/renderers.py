@@ -6,6 +6,7 @@ import multiprocessing as mp
 import multiprocessing.reduction as mpreduction
 import dill
 import io
+from .filetypes import filetypes
 
 
 def init_mp():
@@ -73,14 +74,12 @@ def render_process(lang, text: list[str], cmd: mp.Queue, res: mp.Queue):
         return cmd.get()
 
     def render_all():
-        nonlocal buf, tree
-        buf = copy_structure(text, fill='')
+        nonlocal tree
         btext = bytes('\n'.join(text), 'utf-8')
         tree = parser.parse(btext)
         return render_inrange(-1, -1)
 
     def render_inrange(lb: int, rb: int):
-        nonlocal buf
         c = cmd_peek()
         if not c or c[0] != 'g':  # 任务上新了
             return
@@ -127,56 +126,8 @@ def render_process(lang, text: list[str], cmd: mp.Queue, res: mp.Queue):
                 rb += len(new)
             btext += new
         return btext, lb, rb
-    
-    def _insert(y: int, x: int, ny: int, nx: int, t: str):
-        data = buf
-        if x > 0:
-            fill = data[y][x - 1]
-        else:
-            tmp = y
-            while tmp > 0 and not data[tmp - 1]:
-                tmp -= 1
-            if tmp > 0:
-                fill = data[tmp - 1][-1]
-            else:
-                fill = ''
-        tmp = 0
-        for ch in t:
-            if ch == "\n":
-                data.insert(y + 1, data[y][x:])
-                data[y] = data[y][:x] + [fill] * tmp
-                y += 1
-                x = 0
-                tmp = 0
-            else:
-                tmp += 1
-        if tmp:
-            data[y] = data[y][:x] + [fill] * tmp + data[y][x:]
-            x += tmp
-
-    def _delete(y: int, x: int, q: int, p: int):
-        data = buf
-        if y == q:
-            if p == len(data[y]):
-                data[y] = data[y][:x]
-                if y + 1 < len(data):
-                    data[y] += data[y + 1]
-                    del data[y + 1]
-            else:
-                data[y] = data[y][:x] + data[y][p + 1 :]
-        else:
-            data[y] = data[y][:x]
-            del data[y + 1 : q]
-            if p == len(data[y + 1]):
-                del data[y + 1]
-            else:
-                data[y + 1] = data[q][p + 1 :]
-            if y + 1 < len(data):
-                data[y] += data[y + 1]
-                del data[y + 1]
 
     def insert(y: int, x: int, ny: int, nx: int, t: str):
-        _insert(y, x, ny, nx, t)
         nonlocal tree
         textinputer.insert(y, x, t)
         if not tree:
@@ -208,7 +159,6 @@ def render_process(lang, text: list[str], cmd: mp.Queue, res: mp.Queue):
         _, *dbset = get_as_bytes2(y, x, q, p)
 
     def delete(y: int, x: int, q: int, p: int):
-        _delete(y, x, q, p)
         nonlocal tree
         if not tree:
             return
@@ -239,7 +189,6 @@ def render_process(lang, text: list[str], cmd: mp.Queue, res: mp.Queue):
     textinputer = TextInputer(None)
     textinputer.insert(0, 0, '\n'.join(text), True)
     text = textinputer.text
-    buf = []
     tree = None
     bp = 0
     dbset = 0, 0
@@ -268,6 +217,9 @@ def render_process(lang, text: list[str], cmd: mp.Queue, res: mp.Queue):
         elif c[0] == 'g':
             res.put(list(update_dict.items()))
             update_dict = {}
+        elif c[0] == 'c':
+            text = [""]
+            render_all()
 
 
 def gen_renderer(lang) -> type[Renderer]:
@@ -302,6 +254,10 @@ def gen_renderer(lang) -> type[Renderer]:
         def check_update(self):
             return not self.res.empty()
         
+        def clear(self):
+            self.cmd.put(('c',))
+            super().clear()
+
         def get(self, y: int, x: int) -> str:
             ry, rx = y, x
             if self.need_render:
@@ -325,18 +281,16 @@ def gen_renderer(lang) -> type[Renderer]:
 
 
 renderers_table: dict[str, type[Renderer]] = {
-    'c': gen_renderer('c'),
-    'cpp': gen_renderer('cpp'),
-    'rs': gen_renderer('rust'),
-    'lua': gen_renderer('lua'),
-    'go': gen_renderer('go'),
-    'py': gen_renderer('python'),
+    'plaintext': PlainTextRenderer,
 }
 finalizers = []
 
 
-def get_renderer(ft: str = '') -> type:
-    return renderers_table.get(ft, PlainTextRenderer)
+def get_renderer(ft: str = '') -> type[Renderer]:
+    ft = filetypes.get(ft, 'plaintext')
+    if ft not in renderers_table:
+        renderers_table[ft] = gen_renderer(ft)
+    return renderers_table[ft]
 
 
 def finalize():

@@ -37,10 +37,11 @@ python3 ./termed.py ./file.py  # open a file
 - Fuzzy Finder (primary)
 - Tree-sitter integration (primary)
 # Todo List
+- Wild Menu (command mode completion)
+- LSP integration
 - Builtin configuration language
-- GUI
-- LSP integration (may done by plugins)
 - Git integration
+- GUI
 # Screenshots
 You can see them in ```./pics/```
 
@@ -48,3 +49,4 @@ You can see them in ```./pics/```
 ![](/pics/微信截图_20250429211040.png "Splited to many windows")
 ![](/pics/屏幕截图_20250722_114845.png "Using file explorer")
 ![](/pics/屏幕截图_20250723_173909.png "Running theme selector")
+![](/pics/wechat_2025-08-15_173711_799.png "Highlighting multiple types of code using tree-sitter")
