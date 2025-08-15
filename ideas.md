@@ -68,3 +68,7 @@ FloatWindow不应该继承Window类，这么一想继承结构就简单多了，
 我知道了，先写文档吧（doge  
 看起来README里面一堆flags一个比一个复杂  
 textobj不能加参数的问题也还没解决，貌似需要回调
+## 2025-8-13
+真正的挑战来了，要对代码异步化处理，主要是Tree-sitter的性能问题  
+直接把整个renderer放独立进程里，这样就可以避免大量数据的传递了（  
+然而那个renderer甚至还需要再持有一个textinputer、、、

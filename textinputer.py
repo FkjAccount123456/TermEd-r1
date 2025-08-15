@@ -7,7 +7,6 @@ from enum import Enum, unique
 import time
 import os
 from utils import log, gotoxy
-from renderer import Renderer
 
 
 EDIT_DELAY = 0.2
@@ -112,7 +111,8 @@ class TextInputer:
                 self.text.clear()
                 if hs.refill:
                     self.text.extend(hs.refill[0])
-                self.parent.renderer.render_all()
+                if self.parent:
+                    self.parent.renderer.render_all()
                 return hs.begin
 
     def redo(self):
@@ -127,20 +127,22 @@ class TextInputer:
                 self.text.clear()
                 if hs.refill:
                     self.text.extend(hs.refill[1])
-                self.parent.renderer.render_all()
+                if self.parent:
+                    self.parent.renderer.render_all()
                 return hs.begin
 
     def clear(self):
         # self.parent.renderer.rem(0, len(self.text) - 1)
         # self.parent.renderer.add(0, 0)
-        self.parent.renderer.clear()
+        if self.parent:
+            self.parent.renderer.clear()
         self.text.clear()
         self.text.append("")
         self.history = UndoTree(None, 0)
         self.cur_history = self.history
         self.save_ver = self.cur_history
 
-    def reset_renderer(self, renderer: Renderer):
+    def reset_renderer(self, renderer):
         self.renderer = renderer
 
     def insert(self, y: int, x: int, text: str, is_do=False):
@@ -149,7 +151,8 @@ class TextInputer:
         assert y < len(self.text) and x <= len(self.text[y])
         text = text.replace("\r", "")
         begin = y, x
-        self.parent.renderer.pre_insert(*begin, text)
+        if self.parent:
+            self.parent.renderer.pre_insert(*begin, text)
         yb = y
         tmp = ""
         for ch in text:
@@ -168,16 +171,17 @@ class TextInputer:
         self.text[y] = self.text[y][:x] + tmp + self.text[y][x:]
         x += len(tmp)
         # print(y, x, tmp)
+        ey, ex = y, x
+        if ex:
+            ex -= 1
+        else:
+            ey -= 1
+            ex = len(self.text[ey])
         if not is_do:
-            ey, ex = y, x
-            if ex:
-                ex -= 1
-            else:
-                ey -= 1
-                ex = len(self.text[ey])
             self.cur_history = self.cur_history.add(
                 History(HistoryType.Insert, begin, (ey, ex), text))
-        self.parent.renderer.insert(*begin, text)
+        if self.parent:
+            self.parent.renderer.insert(*begin, ey, ex, text)
         return y, x
 
     def delete(self, y: int, x: int, q: int, p: int, is_do=False):
@@ -187,7 +191,8 @@ class TextInputer:
         if not is_do:
             self.cur_history = self.cur_history.add(
                 History(HistoryType.Delete, (y, x), (q, p), self.get(y, x, q, p)))
-        self.parent.renderer.pre_delete(y, x, q, p)
+        if self.parent:
+            self.parent.renderer.pre_delete(y, x, q, p)
         if y == q:
             if p == len(self.text[y]):
                 self.text[y] = self.text[y][:x]
@@ -212,7 +217,8 @@ class TextInputer:
             if y + 1 < len(self.text):
                 self.text[y] += self.text[y + 1]
                 del self.text[y + 1]
-        self.parent.renderer.delete(y, x, q, p)
+        if self.parent:
+            self.parent.renderer.delete(y, x, q, p)
         return y, x
 
     def get(self, y: int, x: int, q: int, p: int):
