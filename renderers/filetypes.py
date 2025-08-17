@@ -66,4 +66,10 @@ filetypes = {
     'vim': 'vim',
     'v': 'v',
     'zig': 'zig',
+    'js': 'javascript',
+    'jsx': 'jsx',
+    'ts': 'typescript',
+    'tsx': 'typescript',
+    'vue': 'vue',
+    'vimdoc': 'vimdoc',
 }

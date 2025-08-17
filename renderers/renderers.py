@@ -5,7 +5,7 @@ import multiprocessing as mp
 import multiprocessing.reduction as mpreduction
 import io
 from .filetypes import filetypes
-from .queryparse import preprocess_query
+from .queryparse import preprocess_query, read_scm
 
 
 class PlainTextRenderer(Renderer):
@@ -31,19 +31,6 @@ def init_mp():
     
     mpreduction.ForkingPickler = PatchedPickler
     mpreduction.dumps = PatchedPickler.dumps  # type: ignore
-
-
-def read_scm(lang) -> str:
-    scm_file = os.path.join(
-        os.path.dirname(__file__),
-        os.pardir,
-        "external/nvim-treesitter/queries",
-        lang,
-        "highlights.scm",
-    )
-    with open(scm_file, "r", encoding="utf-8") as f:
-        queries = f.read()
-    return queries
 
 
 def calc_unicodex(s: str, x: int):

@@ -3,6 +3,8 @@
 不过还有现成的TL2
 """
 
+import os
+
 
 def tokenize(code: str) -> list[str]:
     pos = 0
@@ -168,6 +170,8 @@ def rebuild(tree) -> str:
     if isinstance(tree, list):
         if isinstance(tree[0], Symbol) and tree[0].name == '#lua-match?':
             return f"(#match? {rebuild(tree[1])} \"{trans_regex(tree[2])}\")"
+        if isinstance(tree[0], Symbol) and tree[0].name == '#set!' and len(tree) == 4:
+            del tree[1]
         return "(" + " ".join(map(rebuild, tree)) + ")"
     elif isinstance(tree, str):
         return '"' + tree + '"'
@@ -180,7 +184,24 @@ def rebuild(tree) -> str:
     raise
 
 
+def read_scm(lang) -> str:
+    scm_file = os.path.join(
+        os.path.dirname(__file__),
+        os.pardir,
+        "external/nvim-treesitter/queries",
+        lang,
+        "highlights.scm",
+    )
+    with open(scm_file, "r", encoding="utf-8") as f:
+        queries = f.read()
+    return queries
+
+
 def preprocess_query(query_text: str) -> str:
+    if query_text.startswith('; inherits: '):
+        inherits = query_text[12 : query_text.find('\n')].split(',')
+        for i in inherits:
+            query_text = read_scm(i) + query_text
     tree = parse(tokenize(query_text))
     return '\n'.join(map(rebuild, tree))
 
