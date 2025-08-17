@@ -138,8 +138,8 @@ class Drawer:
 
     # 2025-3-16
     # 显然并不能做出太大的改变，不过能改一点是一点
-    def draw(self, render: Renderer,
-             selb: tuple[int, int] | None = None, sele: tuple[int, int] | None =None):
+    def draw(self, render: Renderer, cursory: int,
+             selb: tuple[int, int] | None = None, sele: tuple[int, int] | None = None):
         target_ln = min(self.scroll_down(self.scry, self.scrys, self.h - 1)[0], len(self.text) - 1)
         render.render(target_ln, len(self.text[target_ln]) - 1)
         scrcnt = 0
@@ -156,13 +156,17 @@ class Drawer:
                     if cys == 0:
                         linum = f"%{self.linum_w - 1}d " % (cy + 1)
                         for ch in linum:
-                            self.screen.change(self.top + scrcnt, self.left + cursh,
-                                               ch, self.editor.theme.get("linum", False), self.prio)
+                            self.screen.change(
+                                self.top + scrcnt, self.left + cursh, ch,
+                                self.editor.theme.get("curlinum" if cy == cursory else "linum", False),
+                                self.prio)
                             cursh += 1
                     else:
                         while cursh < self.linum_w:
-                            self.screen.change(self.top + scrcnt, self.left + cursh,
-                                               " ", self.editor.theme.get("linum", False), self.prio)
+                            self.screen.change(
+                                self.top + scrcnt, self.left + cursh, " ",
+                                self.editor.theme.get("curlinum" if cy == cursory else "linum", False),
+                                self.prio)
                             cursh += 1
 
                 i = -1
@@ -171,7 +175,7 @@ class Drawer:
                         insel = selb <= (cy, i) <= sele
                     else:
                         insel = False
-                    color = self.editor.theme.get(render.get(cy, i), insel)
+                    color = self.editor.theme.get(render.get(cy, i), insel, cy == cursory)
                     self.screen.change(self.top + scrcnt, self.left + cursh,
                                     (ch := self.text[cy][i]), color, self.prio)
                     cursh += get_width(ch)
@@ -181,7 +185,8 @@ class Drawer:
             while cursh < self.full_w:
                 self.screen.change(self.top + scrcnt, self.left + cursh,
                                    " ", self.editor.theme.get(
-                                       "text", i is not None and selb and sele and selb <= (cy, i) <= sele),
+                                       "text", i is not None and selb and sele and selb <= (cy, i) <= sele,
+                                       cy == cursory),
                                    self.prio)
                 cursh += 1
                 i = None

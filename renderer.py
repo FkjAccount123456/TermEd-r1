@@ -97,12 +97,16 @@ class Theme:
     def __getitem__(self, item):
         return self.d.get(item, self.d["text"])
 
-    def get(self, token: str, insel: bool):
+    def get(self, token: str, insel: bool, cursorline: bool = False):
         style = self[token][2]
         if insel:
             if self[token][1] == self["sel"][0]:
                 return cvt_truecolor(self["sel"][0], self["bg"][1], style)
             return cvt_truecolor(self["sel"][0], self[token][1], style)
+        if cursorline:
+            if self[token][1] == self["cursorline"][0]:
+                return cvt_truecolor(self["cursorline"][0], self["bg"][1], style)
+            return cvt_truecolor(self["cursorline"][0], self[token][1], style)
         if self[token][0] != 0:
             return cvt_truecolor(self[token][0], self[token][1], style)
         return cvt_truecolor(self["bg"][0], self[token][1], style)
@@ -213,6 +217,8 @@ onedark_theme = {
     "id": (0x282C34, 0xABB2BF),
     "sel": (0x3E4452, 0x000000),
     "cursor": (0x528BFF, 0x528BFF),
+    "cursorline": (0x2C313C, 0x000000),
+    "curlinum": (0x282C34, 0x737984),
     "linum": (0x282C34, 0x495162),
     "num": (0x282C34, 0xD19A66),
     "kw": (0x282C34, 0xC678DD),
@@ -248,6 +254,8 @@ tokyonight_storm_theme = {
     "id": (0x24283B, 0xC0CAF5),
     "sel": (0x3D59A1, 0x000000),
     "cursor": (0x528BFF, 0x528BFF),
+    "cursorline": (0x292E41, 0x000000),
+    "curlinum": (0x24283B, 0x8089b3),
     "linum": (0x24283B, 0x495162),
     "num": (0x24283B, 0xFF9E64),
     "kw": (0X24283B, 0x9D7CD8, ["italic"]),
@@ -283,6 +291,8 @@ monokai_theme = {
     "id": (0x26292C, 0xF8F8F0),
     "sel": (0x333842, 0x000000),
     "cursor": (0x528BFF, 0xF8F8F0),
+    "cursorline": (0x3E3D33, 0x000000),
+    "curlinum": (0x26292C, 0x2196F3),
     "linum": (0x26292C, 0x4D5154),
     "num": (0x26292C, 0xAE81FF),
     "kw": (0x26292C, 0xF92672),
@@ -318,6 +328,8 @@ catppuccin_mocha_theme = {
     "id": (0x1E1E2E, 0xCDD6F4),
     "sel": (0x45475A, 0x000000),
     "cursor": (0xCDD6F4, 0x24283B),
+    "cursorline": (0x2B2B3B, 0x000000),
+    "curlinum": (0x1E1E2E, 0xcba6f7),
     "linum": (0x1E1E2E, 0x45475A),
     "num": (0x1E1E2E, 0xFAB387),
     "kw": (0x1E1E2E, 0xCBA6F7),

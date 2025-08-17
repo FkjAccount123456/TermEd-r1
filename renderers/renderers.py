@@ -259,15 +259,12 @@ def gen_renderer(lang) -> type[Renderer]:
             if not self.res.empty():
                 buf, text = self.buf, self.text
                 updates = self.res.get()
-                log('variable.member' in map(lambda x: x[1], updates))
                 for (y, x, q, p), group in updates:
                     x = calc_unicodex(text[y], x)
                     p = calc_unicodex(text[q], p)
                     while (y, x) < (q, p):
                         if x < len(buf[y]):
                             buf[y][x] = group
-                            if 'member' in group:
-                                log(f"put {group} {y} {x}")
                         x += 1
                         if x >= len(buf[y]):
                             y, x = y + 1, 0

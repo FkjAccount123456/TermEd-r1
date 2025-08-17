@@ -1677,11 +1677,11 @@ class TextBuffer(Buffer, FileBase):
         self.drawer.scroll_buffer(self.y, self.x)
         if not self.editor.mode and self.mode == "VISUAL":
             if (self.y, self.x) < (self.sely, self.selx):
-                self.drawer.draw(self.renderer, (self.y, self.x), (self.sely, self.selx))
+                self.drawer.draw(self.renderer, self.y, (self.y, self.x), (self.sely, self.selx))
             else:
-                self.drawer.draw(self.renderer, (self.sely, self.selx), (self.y, self.x))
+                self.drawer.draw(self.renderer, self.y, (self.sely, self.selx), (self.y, self.x))
         else:
-            self.drawer.draw(self.renderer)
+            self.drawer.draw(self.renderer, self.y)
         cursor_real_pos = self.cursor_real_pos()
         if self.editor.cur == self and self.editor.mode != "COMMAND":
             self.editor.screen.set_cursor(*cursor_real_pos)
@@ -1769,7 +1769,7 @@ class deprecated_TextWindow(Window):
 
     def draw(self):
         self.drawer.scroll_buffer(0, 0)
-        self.drawer.draw(self.renderer)
+        self.drawer.draw(self.renderer, -1)
 
         modeline = self.name[: self.w]
         shw = 0
