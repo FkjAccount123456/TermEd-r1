@@ -1,12 +1,21 @@
 from renderer import Renderer
 from utils import copy_structure, log
 import os
-from .plaintext import PlainTextRenderer
 import multiprocessing as mp
 import multiprocessing.reduction as mpreduction
-import dill
 import io
 from .filetypes import filetypes
+from .queryparse import preprocess_query
+
+
+class PlainTextRenderer(Renderer):
+    def __init__(self, text: list[str]): ...
+
+    def insert(self, *_): ...
+
+    def delete(self, *_): ...
+
+    def clear(self): ...
 
 
 def init_mp():
@@ -35,15 +44,6 @@ def read_scm(lang) -> str:
     with open(scm_file, "r", encoding="utf-8") as f:
         queries = f.read()
     return queries
-
-
-def preprocess_query(query_text):
-    processed = query_text.replace("#lua-match?", "#match?")
-    if query_text.startswith("; inherits: "):
-        inherits = query_text[12 : query_text.find("\n")].split(',')
-        for i in inherits:
-            processed += '\n' + preprocess_query(read_scm(i.strip()))
-    return processed
 
 
 def calc_unicodex(s: str, x: int):
@@ -93,8 +93,11 @@ def render_process(lang, text: list[str], cmd: mp.Queue, res: mp.Queue):
         for group, nodes in captures:
             if group.startswith('_'):
                 continue
+            ndots = group.count('.')
             for node in nodes:
-                qdict[(node.start_point[0], node.start_point[1], node.end_point[0], node.end_point[1])] = group
+                pos = node.start_point[0], node.start_point[1], node.end_point[0], node.end_point[1]
+                if pos not in qdict or qdict[pos].count('.') <= ndots:
+                    qdict[pos] = group
         return qdict
 
     def get_as_bytes(y: int, x: int):
@@ -180,8 +183,11 @@ def render_process(lang, text: list[str], cmd: mp.Queue, res: mp.Queue):
     from textinputer import TextInputer
     from tree_sitter_language_pack import get_parser, get_language, SupportedLanguage
     from tree_sitter import QueryCursor, Query
-    queries = read_scm(lang)
-    queries = preprocess_query(queries)
+    if lang in queries_table:
+        queries = queries_table[lang]
+    else:
+        queries = read_scm(lang)
+        queries = preprocess_query(queries)
     parser = get_parser(lang)
     language = get_language(lang)
     base_query = Query(language, queries)
@@ -266,12 +272,15 @@ def gen_renderer(lang) -> type[Renderer]:
             if not self.res.empty():
                 buf, text = self.buf, self.text
                 updates = self.res.get()
+                log('variable.member' in map(lambda x: x[1], updates))
                 for (y, x, q, p), group in updates:
                     x = calc_unicodex(text[y], x)
                     p = calc_unicodex(text[q], p)
                     while (y, x) < (q, p):
                         if x < len(buf[y]):
                             buf[y][x] = group
+                            if 'member' in group:
+                                log(f"put {group} {y} {x}")
                         x += 1
                         if x >= len(buf[y]):
                             y, x = y + 1, 0
@@ -283,6 +292,7 @@ def gen_renderer(lang) -> type[Renderer]:
 renderers_table: dict[str, type[Renderer]] = {
     'plaintext': PlainTextRenderer,
 }
+queries_table: dict[str, str] = {}
 finalizers = []
 
 

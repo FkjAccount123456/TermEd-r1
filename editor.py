@@ -4,12 +4,13 @@ from renderers.renderers import get_renderer
 from screen import Screen, VScreen
 from utils import ed_getch, flush, get_char_type, get_file_ext, get_width, log, gotoxy
 from drawer import Drawer
-import multiprocessing as mp
 from buffer import BufferBase
 from ederrors import *
 from tagparse import parse_tags_file, tags_navigate, merge_tags, TagEntry, FileEntry
 from fuzzy import fuzzy_find
 import os
+import time
+import multiprocessing as mp
 
 
 def get_terminal_size():
@@ -1896,7 +1897,7 @@ class Editor:
         self.fb_maps: dict[str, set[FileBase]] = {}
         self.h, self.w = h, w
         self.screen = Screen(self.h, self.w)
-        self.theme_name = "tokyonight-storm"
+        self.theme_name = "Tokyo Night Storm"
         self.theme = Theme(themes[self.theme_name])
         self.linum = True
         self.cur: KeyHolder = TextBuffer(0, 0, self.h - 1, self.w, self, None)
@@ -2342,7 +2343,8 @@ class Editor:
                 self.cur.fill_cmp_menu()
             elif isinstance(self.cur, TextBuffer):
                 self.cur.clear_cmp_menu()
-            self.draw()
+            if self.reader_queue.empty():
+                self.draw()
 
             self.message = ""
             keyseq = self.read_keyseq(self.async_getch)
