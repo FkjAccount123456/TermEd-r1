@@ -72,4 +72,5 @@ filetypes = {
     'tsx': 'typescript',
     'vue': 'vue',
     'vimdoc': 'vimdoc',
+    'iml': 'xml',
 }

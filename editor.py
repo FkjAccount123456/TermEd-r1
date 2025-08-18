@@ -8,15 +8,19 @@ from buffer import BufferBase
 from ederrors import *
 from tagparse import parse_tags_file, tags_navigate, merge_tags, TagEntry, FileEntry
 from fuzzy import fuzzy_find
+from os import get_terminal_size
+from textinputer import TextInputer
 import os
 import time
 import multiprocessing as mp
 
 
-def get_terminal_size():
-    w, h = os.get_terminal_size()
-    # h -= 1
-    return w, h
+def check_tree(win: "Window"):
+    if isinstance(win, TextBuffer):
+        return f"TextBuffer({repr(win.file)})"
+    if isinstance(win, Split):
+        return f"Split({check_tree(win.win1)}, {check_tree(win.win2)})"
+    return type(win).__name__
 
 
 def getch_process(q: mp.Queue):
@@ -72,6 +76,8 @@ class FileBase(BufferBase):
         self.renderer = get_renderer(get_file_ext(self.file))(self.text)
 
     def open_file(self, arg: str, force=False):
+        # 2025-8-18
+        # 全是问题
         arg = arg.strip()
         old = self.file
         if not arg:
@@ -88,30 +94,34 @@ class FileBase(BufferBase):
                 and self.editor.fb_maps[path]:
             # 大换血啊（
             #
-            model = self.editor.fb_maps[path].pop()
-            self.editor.fb_maps[path].add(model)
-            self.textinputer = model.textinputer
-            self.renderer = model.renderer
-            self.reset_drawer()
-            self.text = self.textinputer.text
+            for model in self.editor.fb_maps[path]:
+                self.textinputer = model.textinputer
+                self.renderer = model.renderer
+                self.y = self.ideal_x = self.x = 0
+                self.reset_drawer()
+                self.text = self.textinputer.text
         elif self.file:
             if not os.path.exists(self.file):
-                self.textinputer.clear()
+                self.textinputer = TextInputer(self)
+                self.text = self.textinputer.text
+                self.renderer = get_renderer(get_file_ext(self.file))(self.text)
+                self.reset_drawer()
                 self.y = self.ideal_x = self.x = 0
                 self.textinputer.save()
-                self.renderer = get_renderer(get_file_ext(self.file))(self.text)
             else:
                 with open(self.file, "r", encoding="utf-8") as f:
                     text = f.read()
-                self.textinputer.clear()
+                self.textinputer = TextInputer(self)
+                self.text = self.textinputer.text
+                self.renderer = get_renderer(get_file_ext(self.file))(self.text)
                 self.textinputer.insert(0, 0, text)
+                self.reset_drawer()
                 self.y = self.ideal_x = self.x = 0
                 self.reset_scroll()
                 self.textinputer.save()
-                self.renderer = get_renderer(get_file_ext(self.file))(self.text)
-        if old is not None:
+        if old:
             self.editor.fb_maps[os.path.abspath(old)].remove(self)
-        if self.file is not None:
+        if self.file:
             if os.path.abspath(self.file) not in self.editor.fb_maps:
                 self.editor.fb_maps[os.path.abspath(self.file)] = set()
             self.editor.fb_maps[os.path.abspath(self.file)].add(self)
@@ -885,26 +895,29 @@ class Window(WindowLike):
 
     # 新窗口在右下
     def split(self, sp_tp: bool, buf_tp = None, reserve=-1, *args):
-        if self.h < 20 and sp_tp == HSplit or self.w < 40 and sp_tp == VSplit:
+        if self.h < 20 and sp_tp == HSplit or self.w < 41 and sp_tp == VSplit:
             return
         if buf_tp is None:
             buf_tp = TextBuffer
         if sp_tp == HSplit:
-            upper_h = self.h // 2 if reserve == -1 else reserve
+            # 2025-8-17
+            # 666多长时间了这顺序还是错的
+            # 不过好像时间确实不长
+            upper_h = self.h // 2 if reserve == -1 else max(reserve, 10)
             new_sp = Split(self.top, self.left, self.h, self.w,
                            self.editor, self.parent, sp_tp, upper_h)
-            self.resize(upper_h, self.w)
             new_buf = buf_tp(self.top + upper_h, self.left, self.h - upper_h, self.w,
                              self.editor, (new_sp, True), *args)
+            self.resize(upper_h, self.w)
         else:
             # log(("split", self.h, self.w, (self.w - 1) // 2))
-            left_w = (self.w - 1) // 2 if reserve == -1 else reserve
+            left_w = (self.w - 1) // 2 if reserve == -1 else max(reserve, 20)
             new_sp = Split(self.top, self.left, self.h, self.w,
                            self.editor, self.parent, sp_tp, left_w + 1)
             new_w = self.w - left_w - 1
-            self.resize(self.h, left_w)
             new_buf = buf_tp(self.top, self.left + left_w + 1, self.h, new_w,
                              self.editor, (new_sp, True), *args)
+            self.resize(self.h, left_w)
 
         new_sp.win1, new_sp.win2 = self, new_buf
         self.parent = new_sp, False
@@ -2045,15 +2058,23 @@ class Editor:
             self.cur.cmdmap[head](tail)
         self.mode_normal()
 
-    def accept_cmd_hsplit(self, *_):
+    def accept_cmd_hsplit(self, arg: str):
         if not isinstance(self.cur, Buffer):
             return
         self.cur.split(HSplit)
+        arg = arg.strip()
+        if os.path.exists(arg) and os.path.isfile(arg):
+            self.cur.parent[0].win2.open_file(arg)  # type: ignore
+        self.cur = self.cur.parent[0].win2  # type: ignore
 
-    def accept_cmd_vsplit(self, *_):
+    def accept_cmd_vsplit(self, arg: str):
         if not isinstance(self.cur, Buffer):
             return
         self.cur.split(VSplit)
+        arg = arg.strip()
+        if os.path.exists(arg) and os.path.isfile(arg):
+            self.cur.parent[0].win2.open_file(arg)  # type: ignore
+        self.cur = self.cur.parent[0].win2  # type: ignore
 
     def accept_cmd_goto_by_id(self, arg: str):
         try:
@@ -2090,8 +2111,8 @@ class Editor:
         except:
             pass
 
-    def open_explorer(self, *_):
-        self.gwin.split(VSplit, FileExplorer, reserve=self.w - 1 - max(30, self.w // 5))
+    def open_explorer(self, arg: str):
+        self.gwin.split(VSplit, FileExplorer, self.w - 1 - max(30, self.w // 5), arg)
         if isinstance(self.gwin, Split):
             self.gwin.revert()
             # self.gwin.win1.resize_bottomup(self.gwin.win1.h, max(30, self.w // 5))

@@ -23,6 +23,9 @@ def tokenize(code: str) -> list[str]:
             pos += 1
             s = '"'
             while pos < len(code) and code[pos] != '"':
+                if code[pos] == '\\':
+                    s += code[pos]
+                    pos += 1
                 s += code[pos]
                 pos += 1
             if pos >= len(code):
@@ -207,5 +210,5 @@ def preprocess_query(query_text: str) -> str:
 
 
 if __name__ == '__main__':
-    query_text = open('external/nvim-treesitter/queries/python/highlights.scm', 'r', encoding='utf-8').read()
+    query_text = open('external/nvim-treesitter/queries/xml/highlights.scm', 'r', encoding='utf-8').read()
     print(preprocess_query(query_text).split('\n')[33])

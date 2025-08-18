@@ -22,3 +22,5 @@ main-temp.py
 test*
 *project/
 queries/*
+*.history
+.*

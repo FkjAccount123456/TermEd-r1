@@ -44,7 +44,7 @@ def calc_unicodex(s: str, x: int):
 type RenderCommand = tuple
 
 
-def render_process(lang, text: list[str], cmd: mp.Queue, res: mp.Queue):
+def render_process(lang, text: list[str], cmd: mp.Queue, res: mp.Queue, queries: str):
     cmdbuf = []
 
     def cmd_peek():
@@ -170,11 +170,6 @@ def render_process(lang, text: list[str], cmd: mp.Queue, res: mp.Queue):
     from textinputer import TextInputer
     from tree_sitter_language_pack import get_parser, get_language, SupportedLanguage
     from tree_sitter import QueryCursor, Query
-    if lang in queries_table:
-        queries = queries_table[lang]
-    else:
-        queries = read_scm(lang)
-        queries = preprocess_query(queries)
     parser = get_parser(lang)
     language = get_language(lang)
     base_query = Query(language, queries)
@@ -215,13 +210,13 @@ def render_process(lang, text: list[str], cmd: mp.Queue, res: mp.Queue):
             render_all()
 
 
-def gen_renderer(lang) -> type[Renderer]:
+def gen_renderer(lang, queries: str) -> type[Renderer]:
     class Res(Renderer):
         def __init__(self, text: list[str]):
             super().__init__(text, '')
             self.cmd = mp.Queue()
             self.res = mp.Queue()
-            self.renderer = mp.Process(target=render_process, args=(lang, text, self.cmd, self.res), daemon=True)
+            self.renderer = mp.Process(target=render_process, args=(lang, text, self.cmd, self.res, queries), daemon=True)
             self.renderer.start()
             self.buf = copy_structure(text, fill='')
             self.all_tochange.append(self.buf)
@@ -276,14 +271,15 @@ def gen_renderer(lang) -> type[Renderer]:
 renderers_table: dict[str, type[Renderer]] = {
     'plaintext': PlainTextRenderer,
 }
-queries_table: dict[str, str] = {}
 finalizers = []
 
 
 def get_renderer(ft: str = '') -> type[Renderer]:
     ft = filetypes.get(ft, 'plaintext')
     if ft not in renderers_table:
-        renderers_table[ft] = gen_renderer(ft)
+        queries = read_scm(ft)
+        queries = preprocess_query(queries)
+        renderers_table[ft] = gen_renderer(ft, queries)
     return renderers_table[ft]
 
 
