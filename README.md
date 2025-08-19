@@ -36,8 +36,8 @@ python3 ./termed.py ./file.py  # open a file
 - CTags integration (primary)
 - Fuzzy Finder (primary)
 - Tree-sitter integration (primary)
-# Todo List
 - Wild Menu (command mode completion)
+# Todo List
 - LSP integration
 - Builtin configuration language
 - Git integration

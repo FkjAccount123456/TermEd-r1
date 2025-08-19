@@ -54,6 +54,31 @@ def draw_text(self: "WindowLike", top: int, left: int, width: int, text: str, tp
         shw += 1
 
 
+def cmdcmp_files(arg: str):
+    dirname = os.path.dirname(arg)
+    name = os.path.basename(arg)
+    menu, ndels = [], []
+    if os.path.exists(dirname) and os.path.isdir(dirname) or not dirname:
+        words = os.listdir(dirname) if dirname else os.listdir()
+        menu = filter(lambda x: x[:len(name)] == name, words)
+        menu = list(map(lambda x: x + '/'[:os.path.isdir(os.path.join(dirname, x))], menu))
+        menu.sort()
+        ndels = [len(name) for _ in menu]
+    return menu, ndels
+
+
+def cmdcmp_dirs(arg: str):
+    dirname = os.path.dirname(arg)
+    name = os.path.basename(arg)
+    menu, ndels = [], []
+    if os.path.exists(dirname) and os.path.isdir(dirname) or not dirname:
+        words = os.listdir(dirname) if dirname else os.listdir()
+        menu = list(filter(lambda x: x[:len(name)] == name and os.path.isdir(os.path.join(dirname, x)), words))
+        menu.sort()
+        ndels = [len(name) for _ in menu]
+    return menu, ndels
+
+
 class FileBase(BufferBase):
     def __init__(self, editor: "Editor"):
         super().__init__()
@@ -75,32 +100,56 @@ class FileBase(BufferBase):
         self.textinputer.save()
         self.renderer = get_renderer(get_file_ext(self.file))(self.text)
 
-    def open_file(self, arg: str, force=False):
+    def load_existed(self, path: str):
+        # 大换血啊（
+        #
+        for model in self.editor.fb_maps[path]:
+            self.textinputer = model.textinputer
+            self.renderer = model.renderer
+            self.y = self.ideal_x = self.x = 0
+            self.reset_drawer()
+            self.text = self.textinputer.text
+        self.editor.fb_maps[path].add(self)
+
+    def _open_file(self, arg: str, force=False):
         # 2025-8-18
         # 全是问题
         arg = arg.strip()
         old = self.file
+        msg = None
         if not arg:
-            if self.file and force and not self.textinputer.is_saved() and os.path.exists(self.file):
-                self.reopen()
+            if self.file and (force or self.textinputer.is_saved()) and os.path.exists(self.file):
+                try:
+                    self.reopen()
+                    return 'Reopened ' + self.file
+                except:
+                    return 'Reopen failed'
+            if not self.textinputer.is_saved() and not force:
+                return 'Reopen failed, file not saved'
             return
         if arg:
             if self.file and os.path.abspath(self.file) == os.path.abspath(arg):
                 if force and not self.textinputer.is_saved() and os.path.exists(self.file):
-                    self.reopen()
+                    try:
+                        self.reopen()
+                        return 'Reopened ' + self.file
+                    except:
+                        return 'Reopen failed'
+                if not self.textinputer.is_saved() and not force:
+                    return 'Reopened failed, file not saved'
                 return
             self.file = arg
         if self.file and (path := os.path.abspath(self.file)) in self.editor.fb_maps\
                 and self.editor.fb_maps[path]:
-            # 大换血啊（
-            #
-            for model in self.editor.fb_maps[path]:
-                self.textinputer = model.textinputer
-                self.renderer = model.renderer
-                self.y = self.ideal_x = self.x = 0
-                self.reset_drawer()
-                self.text = self.textinputer.text
+            if not self.textinputer.is_saved() and not force:
+                self.file = old
+                return 'Open failed, file not saved'
+            self.load_existed(path)
+            msg = f'Opened {self.file}'
         elif self.file:
+            if not self.textinputer.is_saved() and not force:
+                self.file = old
+                return 'Open failed, file not saved'
             if not os.path.exists(self.file):
                 self.textinputer = TextInputer(self)
                 self.text = self.textinputer.text
@@ -108,25 +157,37 @@ class FileBase(BufferBase):
                 self.reset_drawer()
                 self.y = self.ideal_x = self.x = 0
                 self.textinputer.save()
+                msg = 'Created a new buffer'
             else:
-                with open(self.file, "r", encoding="utf-8") as f:
-                    text = f.read()
-                self.textinputer = TextInputer(self)
-                self.text = self.textinputer.text
-                self.renderer = get_renderer(get_file_ext(self.file))(self.text)
-                self.textinputer.insert(0, 0, text)
-                self.reset_drawer()
-                self.y = self.ideal_x = self.x = 0
-                self.reset_scroll()
-                self.textinputer.save()
+                try:
+                    with open(self.file, "r", encoding="utf-8") as f:
+                        text = f.read()
+                    self.textinputer = TextInputer(self)
+                    self.text = self.textinputer.text
+                    self.renderer = get_renderer(get_file_ext(self.file))(self.text)
+                    self.textinputer.insert(0, 0, text)
+                    self.reset_drawer()
+                    self.y = self.ideal_x = self.x = 0
+                    self.reset_scroll()
+                    self.textinputer.save()
+                    msg = f'Opened {self.file}'
+                except:
+                    msg = f'Failed to open {self.file}'
+                    self.file = old
         if old:
             self.editor.fb_maps[os.path.abspath(old)].remove(self)
         if self.file:
             if os.path.abspath(self.file) not in self.editor.fb_maps:
                 self.editor.fb_maps[os.path.abspath(self.file)] = set()
             self.editor.fb_maps[os.path.abspath(self.file)].add(self)
+        return msg
 
-    def save_file(self, arg: str):
+    def open_file(self, arg: str, force=False):
+        if res := self._open_file(arg, force):
+            self.editor.send_message(res)
+
+    def _save_file(self, arg: str):
+        msg = None
         if not (arg == "" and self.file is None):
             if arg:
                 old_file = self.file
@@ -140,13 +201,22 @@ class FileBase(BufferBase):
                     self.textinputer.save()
                     if not old_file or get_file_ext(self.file) != get_file_ext(old_file):
                         self.renderer = get_renderer(get_file_ext(self.file))(self.text)
+                    msg = f'Saved {self.file}'
                 except:
                     self.file = old_file
-            if old_file is not None and old_file != self.file and os.path.exists(old_file):
+                    msg = f'Failed to save {self.file}'
+            if old_file is not None and os.path.abspath(old_file) != os.path.abspath(self.file)\
+                    and os.path.exists(old_file):
                 if os.path.abspath(old_file) in self.editor.fb_maps:
-                    self.editor.fb_maps[os.path.abspath(old_file)].pop()
+                    self.editor.fb_maps[os.path.abspath(old_file)].remove(self)
                 if self.file is not None:
-                    self.editor.fb_maps[os.path.abspath(self.file)].add(self)
+                    path = os.path.abspath(self.file)
+                    self.editor.fb_maps[path].add(self)
+        return msg
+
+    def save_file(self, arg: str):
+        if res := self._save_file(arg):
+            self.editor.send_message(res)
 
 
 class WindowLike:
@@ -166,6 +236,7 @@ class KeyHolder:
     def __init__(self):
         self.keymap = {}
         self.cmdmap = {}
+        self.cmdcmp = {}
         self.id: int
 
     def bind_key(self, mode: str, key: list[str], func: Callable):
@@ -1055,6 +1126,9 @@ class FileExplorer(MenuBuffer):
         self.cmdmap = {
             "cd": self.change_root,
         }
+        self.cmdcmp = {
+            "cd": cmdcmp_dirs,
+        }
 
     def proc_open(self):
         # print("proc_open", self.buffer[self.y + self.scroll])
@@ -1412,6 +1486,13 @@ class TextBuffer(Buffer, FileBase):
             "s": self.start_substitute,
             "tag": self.tags_find,
         }
+        self.cmdcmp = {
+            "o": cmdcmp_files,
+            "o!": cmdcmp_files,
+            "e": cmdcmp_files,
+            "e!": cmdcmp_files,
+            "w": cmdcmp_files,
+        }
 
     def debug_inspect(self, *n):
         try:
@@ -1426,6 +1507,8 @@ class TextBuffer(Buffer, FileBase):
             self.editor.fb_maps[os.path.abspath(self.file)].remove(self)
         # 2025-4-20 要干什么来着？
         # 这里貌似没有什么要改的了
+        # 2025-8-18
+        # 想起来了，是保存检查，不过可以在caller那里做
 
     # 主打的就是一个多范式（
     def gen_readpos_to_fn(self, fn: Callable):
@@ -1704,7 +1787,7 @@ class TextBuffer(Buffer, FileBase):
         else:
             file = "untitled"
         saved = self.textinputer.is_saved()
-        file = f"[{self.id}] {'[+]' if not saved else ''} {file}"
+        file = f"{'[+]' if not saved else ''} {file}"
         if sum(map(get_width, file)) > self.w:
             if get_width(file[-1]) >= 2:
                 file = file[:self.w - 1] + ".."
@@ -1725,7 +1808,7 @@ class TextBuffer(Buffer, FileBase):
                 menu_left = cursor_real_pos[1] + 1
             if menu_dir:  # 光标之上
                 self.cmp_win.move(cursor_real_pos[0] - menu_h, menu_left)
-                # r = range(cursor_real_pos[0] - menu_h, cursor_real_pos[0])
+            # r = range(cursor_real_pos[0] - menu_h, cursor_real_pos[0])
                 # start = cursor_real_pos[0] - menu_h
             else:         # 光标之下
                 self.cmp_win.move(cursor_real_pos[0] + 1, menu_left)
@@ -1951,6 +2034,10 @@ class Editor:
                 "<right>": self.cmd_cursor_right,
                 "<home>": self.cmd_cursor_home,
                 "<end>": self.cmd_cursor_end,
+                "<C-p>": self.cmd_select_prev,
+                "<C-n>": self.cmd_select_next,
+                "<tab>": self.cmd_select_next,
+                "<C-y>": self.cmd_select_accept,
 
                 "<cr>": self.accept_cmd,
                 "<bs>": self.cmd_backspace,
@@ -1958,8 +2045,10 @@ class Editor:
             },
         }
         self.cmdmap = {
-            "q": self.accept_cmd_close_window,
-            "qa": self.quit_editor,
+            "q": lambda *args: self.accept_cmd_close_window(False, *args),
+            "q!": lambda *args: self.accept_cmd_close_window(True, *args),
+            "qa": self.quit_editor_checked,
+            "qa!": self.quit_editor,
             "sp": self.accept_cmd_hsplit,
             "vsp": self.accept_cmd_vsplit,
             "sg": self.accept_cmd_goto_by_id,
@@ -1972,10 +2061,19 @@ class Editor:
             "cleartags": self.accept_cmd_clear_tags,
             "tagbar": self.accept_cmd_tagbar,
         }
+        self.cmdcmp = {
+            "sp": cmdcmp_files,
+            "vsp": cmdcmp_files,
+            "addtags": cmdcmp_files,
+            "tree": cmdcmp_dirs,
+            "theme": self.cmdcmp_themes,
+        }
         self.mode: None | str = None  # BufferHold/EditorHold
         self.cur_cmd = ""
         self.cmd_pos = 0
         self.message = ""
+        self.msgtime = time.time()
+        self.MSGLAST = 10
         self.floatwins: list[FloatWin] = []
 
         self.tagsfile: list[str] = []
@@ -1992,6 +2090,22 @@ class Editor:
         self.floatwins.append(self.tag_selector)
 
         self.accept_cmd_add_tags("tags")
+
+        # Wild Menu
+        self.cmp_menu: list[str] = []
+        self.cmp_func: list[Callable] = []
+        self.cmp_select = -1
+        self.cmp_scroll = 0
+        self.cmp_maxshow = 10
+        self.cmp_maxwidth = 50
+        self.cmp_minwidth = 10
+        self.cmp_border = False
+        self.cmp_win = FloatWin(0, 0, self.cmp_maxshow + self.cmp_border * 2, self.cmp_maxwidth + self.cmp_border * 2,
+                                self, None, FloatWinFeatures(border=self.cmp_border))
+        self.cmp_win.get_prio = lambda: PrioBuffer + 1
+        self.floatwins.append(self.cmp_win)
+        self.cmp_win.hide = True
+
         # self.accept_cmd_add_tags(r"D:\msys64\clang64\include\tags")
 
         # self.gwin.split(True, TextWindow, "Debug Window")
@@ -2045,17 +2159,35 @@ class Editor:
         elif self.cmd_pos == 1 and self.cur_cmd == ":":
             self.mode_normal()
 
+    def cmd_select_next(self, *_):
+        self.cmp_select += 1
+        if self.cmp_select >= len(self.cmp_menu):
+            self.cmp_select = -1
+
+    def cmd_select_prev(self, *_):
+        self.cmp_select -= 1
+        if self.cmp_select < -1:
+            self.cmp_select = len(self.cmp_menu) - 1
+
+    def cmd_select_accept(self, *_):
+        if self.cmp_menu and self.cmp_select >= 0:
+            self.cmp_func[self.cmp_select]()
+            self.cmp_select = -1
+
     def accept_cmd(self, *_):
+        if self.cmp_menu and self.cmp_select != -1:
+            self.cmd_select_accept()
+            return
         self.cur_cmd = self.cur_cmd[1:].strip()
         split_pos = self.cur_cmd.find(" ")
         if split_pos == -1:
             split_pos = len(self.cur_cmd)
         head = self.cur_cmd[:split_pos]
         tail = self.cur_cmd[split_pos + 1:]
-        if head in self.cmdmap:
-            self.cmdmap[head](tail)
         if head in self.cur.cmdmap:
             self.cur.cmdmap[head](tail)
+        elif head in self.cmdmap:
+            self.cmdmap[head](tail)
         self.mode_normal()
 
     def accept_cmd_hsplit(self, arg: str):
@@ -2144,10 +2276,13 @@ class Editor:
     def cmd_insert(self, key: str):
         self.cur_cmd = self.cur_cmd[:self.cmd_pos] + \
             key + self.cur_cmd[self.cmd_pos:]
-        self.cmd_pos += 1
+        self.cmd_pos += len(key)
 
-    def accept_cmd_close_window(self, *_):
+    def accept_cmd_close_window(self, force, *_):
         if not isinstance(self.cur, Buffer):
+            return
+        if isinstance(self.cur, TextBuffer) and not self.cur.textinputer.is_saved() and not force:
+            self.send_message('Cannot close, file not saved')
             return
         if self.cur.parent:
             parent = self.cur.parent[0]
@@ -2211,6 +2346,13 @@ class Editor:
         self.tag_selector.start(tags)
         self.cur = self.tag_selector
 
+    def quit_editor_checked(self, *_):
+        for buf in self.win_ids.values():
+            if isinstance(buf, TextBuffer) and not buf.textinputer.is_saved():
+                self.send_message('Cannot close, file not saved')
+                return
+        self.quit_editor()
+
     def quit_editor(self, *_):
         self.running = False
 
@@ -2221,18 +2363,88 @@ class Editor:
         self.win_ids[new_id] = win
         return new_id
 
+    def send_message(self, msg: str):
+        self.message = msg
+        self.msgtime = time.time()
+
+    def cmd_cmp_update(self, menu: list[str], func: list[Callable]):
+        if self.cmp_select == -1 or self.cmp_menu[self.cmp_select] not in menu:
+            self.cmp_select = -1
+        else:
+            self.cmp_select = menu.index(self.cmp_menu[self.cmp_select])
+        self.cmp_menu = menu
+        self.cmp_func = func
+
+    def gen_cmp_func(self, ndel: int, ins: str):
+        def func():
+            self.cur_cmd = self.cur_cmd[:self.cmd_pos - ndel] + ins + self.cur_cmd[self.cmd_pos:]
+            self.cmd_pos = self.cmd_pos - ndel + len(ins)
+        
+        return func
+
+    def cmd_fill_cmp(self):
+        menu = []
+        func = []
+        if self.cmd_pos == len(self.cur_cmd):
+            if ' ' not in (cmd := self.cur_cmd[1:].lstrip()):
+                words = list(self.cmdmap.keys()) + list(self.cur.cmdmap.keys())
+                menu = list(filter(lambda x: x[:len(cmd)] == cmd and len(x) > len(cmd), words))
+                menu.sort()
+                func = [self.gen_cmp_func(len(cmd), x) for x in menu]
+            else:
+                cmd = self.cur_cmd[1:].strip()
+                split_pos = cmd.find(" ")
+                if split_pos == -1:
+                    split_pos = len(cmd)
+                head = cmd[:split_pos]
+                tail = cmd[split_pos + 1:]
+                menu, ndels = [], []
+                if head in self.cur.cmdmap:
+                    if head in self.cur.cmdcmp:
+                        menu, ndels = self.cur.cmdcmp[head](tail)
+                elif head in self.cmdmap:
+                    if head in self.cmdcmp:
+                        menu, ndels = self.cmdcmp[head](tail)
+                func = [self.gen_cmp_func(d, s) for d, s in zip(ndels, menu)]
+
+        self.cmd_cmp_update(menu, func)
+
+    def get_menu_height(self, y: int) -> tuple[int, bool]:
+        need_h = min(self.cmp_maxshow, len(self.cmp_menu)) + self.cmp_border
+        real_h = y
+        if self.h - real_h - 1 < need_h and real_h > self.h - real_h - 1:
+            return min(need_h - self.cmp_border, real_h), True
+        return min(need_h - self.cmp_border, self.h - real_h - 1), False
+
+    def set_menu_scroll(self, menu_h: int):
+        cmp_select = max(self.cmp_select, 0)
+        if cmp_select + 1 > self.cmp_scroll + menu_h:
+            self.cmp_scroll = cmp_select + 1 - menu_h
+        if cmp_select < self.cmp_scroll:
+            self.cmp_scroll = cmp_select
+
+    def cmdcmp_themes(self, arg: str):
+        words = themes.keys()
+        menu = list(filter(lambda x: x[:len(arg)] == arg and len(x) > len(arg), words))
+        menu.sort()
+        ndels = [len(arg) for _ in menu]
+        return menu, ndels
+
     def draw(self):
         self.debug_points = []
 
-        for i in self.floatwins:
-            i.draw()
+        mode = self.get_mode()
 
-        if self.mode == "COMMAND":
+        if self.message and time.time() - self.msgtime > self.MSGLAST:
+            self.message = ""
+
+        if mode == "COMMAND":
             line = self.cur_cmd
+        elif mode == "INSERT" or self.mode == "VISUAL":
+            line = f"-- {mode} --"
+            self.message = ""
         elif self.message:
             line = self.message
-        elif self.mode == "INSERT" or self.mode == "VISUAL":
-            line = f"-- {self.mode} --"
         else:
             line = ""
         nlines = 1
@@ -2243,12 +2455,12 @@ class Editor:
                 nlines += 1
                 w_sum = 0
             w_sum += ch_w
-        if self.mode == "COMMAND" and w_sum == self.w:
+        if mode == "COMMAND" and w_sum == self.w:
             nlines += 1
 
         sh = 0
         ln = 0
-        set_cursor = False
+        set_cursor = None
         for i, ch in enumerate(line):
             ch_w = get_width(ch)
             if sh + ch_w > self.w:
@@ -2256,19 +2468,46 @@ class Editor:
                 ln += 1
             self.screen.change(self.h - nlines + ln, sh, ch,
                                self.theme.get("text", False))
-            if self.mode == "COMMAND" and i == self.cmd_pos:
+            if mode == "COMMAND" and i == self.cmd_pos:
                 self.screen.set_cursor(self.h - nlines + ln, sh)
-                set_cursor = True
+                set_cursor = self.h - nlines + ln, sh
             sh += ch_w
         if sh == self.w:
             sh = 0
             ln += 1
-        if self.mode == "COMMAND" and not set_cursor:
+        if mode == "COMMAND" and not set_cursor:
             self.screen.set_cursor(self.h - nlines + ln, sh)
+            set_cursor = self.h - nlines + ln, sh
         while sh < self.w:
             self.screen.change(self.h - nlines + ln, sh, " ",
                                self.theme.get("text", False))
             sh += 1
+
+        if mode == 'COMMAND' and self.cmp_menu:
+            y, x = set_cursor  # type: ignore
+            menu_h, menu_dir = self.get_menu_height(y)
+            self.set_menu_scroll(menu_h)
+            menu_w = max(self.cmp_minwidth,
+                         min(self.cmp_maxwidth, max(map(lambda x: sum(map(get_width, x)), self.cmp_menu))))
+            if x + menu_w + 1 > self.w:
+                menu_left = self.w - menu_w
+            else:
+                menu_left = x + 1
+            if menu_dir:
+                self.cmp_win.move(y - menu_h, menu_left)
+            else:
+                self.cmp_win.move(y + 1, menu_left)
+            self.cmp_win.resize(menu_h + self.cmp_border * 2, menu_w + self.cmp_border * 2)
+            for i in range(menu_h):
+                self.cmp_win.draw_text(i, 0,
+                                       self.cmp_menu[i + self.cmp_scroll] if i + self.cmp_scroll < len(self.cmp_menu) else "",
+                                       "completion" if i + self.cmp_scroll != self.cmp_select else 'completion_selected')
+            self.cmp_win.hide = False
+        else:
+            self.cmp_win.hide = True
+
+        for i in self.floatwins:
+            i.draw()
 
         try:
             self.gwin.resize(self.h - nlines, self.w)
@@ -2364,10 +2603,16 @@ class Editor:
                 self.cur.fill_cmp_menu()
             elif isinstance(self.cur, TextBuffer):
                 self.cur.clear_cmp_menu()
+            if self.mode == 'COMMAND':
+                self.cmd_fill_cmp()
+            else:
+                self.cmp_menu = []
+                self.cmp_func = []
+                self.cmp_select = -1
+
             if self.reader_queue.empty():
                 self.draw()
 
-            self.message = ""
             keyseq = self.read_keyseq(self.async_getch)
             # import utils
             # utils.gotoxy(self.h + 1, 1)
