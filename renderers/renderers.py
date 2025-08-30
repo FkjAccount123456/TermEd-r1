@@ -1,6 +1,7 @@
 from renderer import Renderer
 from utils import copy_structure, log
 import os
+import sys
 import multiprocessing as mp
 import multiprocessing.reduction as mpreduction
 import io
@@ -19,6 +20,8 @@ class PlainTextRenderer(Renderer):
 
 
 def init_mp():
+    mp.set_start_method("spawn")
+
     mp.freeze_support()
     original_pickler = mpreduction.ForkingPickler
     
@@ -208,6 +211,8 @@ def render_process(lang, text: list[str], cmd: mp.Queue, res: mp.Queue, queries:
         elif c[0] == 'c':
             text = [""]
             render_all()
+        elif c[0] == 'q':
+            return
 
 
 def gen_renderer(lang, queries: str) -> type[Renderer]:
@@ -221,6 +226,9 @@ def gen_renderer(lang, queries: str) -> type[Renderer]:
             self.buf = copy_structure(text, fill='')
             self.all_tochange.append(self.buf)
             self.need_render = True
+
+        def __del__(self):
+            self.cmd.put(('q',))
 
         def render_all(self, *_):
             self.cmd.put(('a',))

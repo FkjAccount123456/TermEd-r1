@@ -12,6 +12,8 @@ from os import get_terminal_size
 from textinputer import TextInputer
 import os
 import time
+import threading as tr
+from queue import Queue
 import multiprocessing as mp
 
 
@@ -23,8 +25,11 @@ def check_tree(win: "Window"):
     return type(win).__name__
 
 
-def getch_process(q: mp.Queue):
-    while True:
+running = False
+
+
+def getch_process(q):
+    while running:
         q.put(ed_getch())
 
 
@@ -2000,8 +2005,8 @@ class Editor:
         self.gwin: Window = self.cur
         self.running = False
         self.cur_key: str = ""
-        self.reader_queue = mp.Queue()
-        self.reader = mp.Process(target=getch_process, args=(self.reader_queue,), daemon=True)
+        self.reader_queue = Queue()
+        self.reader = tr.Thread(target=getch_process, args=(self.reader_queue,), daemon=True)
         # self.getch_thread = Thread(target=self.getch, args=(), daemon=True)
 
         # 记得手动注册<cr> <tab> <space>
@@ -2594,8 +2599,10 @@ class Editor:
         return keys
 
     def mainloop(self):
+        global running
         self.running = True
         need_cmp = False
+        running = True
         self.reader.start()
 
         while self.running:
@@ -2640,3 +2647,5 @@ class Editor:
 
             if not self.winmove_seq or self.cur != self.winmove_seq[-1]:
                 self.winmove_seq.append(self.cur.id)
+
+        running = False
