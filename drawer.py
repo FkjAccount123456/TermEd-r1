@@ -5,6 +5,13 @@
 from screen import Screen
 from utils import get_width
 from renderer import *
+from dataclasses import dataclass
+
+
+@dataclass
+class DrawerSettings:
+    linum: bool = True
+    tab_width: int = 4
 
 
 # 2025-3-14
@@ -20,20 +27,28 @@ class Drawer:
 
     def __init__(self, screen: Screen, text: list[str],
                  top: int, left: int, h: int, w: int,
-                 editor, linum: bool, prio: int):
+                 editor, settings: DrawerSettings, prio: int):
         self.screen, self.text = screen, text
         self.top, self.left = top, left
         self.editor = editor
-        self.linum = linum
+        self.settings = settings
         self.prio = prio
         self.update_size(h, w)
 
         self.scry, self.scrys = 0, 0
 
+    def get_width(self, o):
+        if o == '\t':
+            return self.settings.tab_width
+        return get_width(o)
+
+    def update_settings(self, settings: DrawerSettings):
+        self.settings = settings
+
     def update_size(self, h: int, w: int):
         self.full_w = w
         self.h, self.w = h, w
-        if self.linum:
+        if self.settings.linum:
             self.linum_w = max(len(str(len(self.text))), 2) + 1
             self.w = self.full_w - self.linum_w
 
@@ -47,7 +62,7 @@ class Drawer:
         for i in rg:
             # if i >= len(line):
             #     return h, w
-            ch_w = get_width(line[i])
+            ch_w = self.get_width(line[i])
             if w + ch_w > self.w:
                 h += 1
                 w = 0
@@ -94,7 +109,7 @@ class Drawer:
         res = [0]
         w = 0
         for i, ch in enumerate(line):
-            ch_w = get_width(ch)
+            ch_w = self.get_width(ch)
             if w + ch_w > self.w:
                 res.append(i)
                 w = 0
@@ -152,7 +167,7 @@ class Drawer:
             i = None
 
             if not isend:
-                if self.linum:
+                if self.settings.linum:
                     if cys == 0:
                         linum = f"%{self.linum_w - 1}d " % (cy + 1)
                         for ch in linum:
@@ -175,10 +190,10 @@ class Drawer:
                         insel = selb <= (cy, i) <= sele
                     else:
                         insel = False
-                    color = self.editor.theme.get(render.get(cy, i), insel, cy == cursory)
+                    color = self.editor.theme.get(render.get(cy, i), insel, cy == cursory and not isend)
                     self.screen.change(self.top + scrcnt, self.left + cursh,
                                     (ch := self.text[cy][i]), color, self.prio)
-                    cursh += get_width(ch)
+                    cursh += self.get_width(ch)
 
             if i is not None:
                 i += 1
@@ -186,7 +201,7 @@ class Drawer:
                 self.screen.change(self.top + scrcnt, self.left + cursh,
                                    " ", self.editor.theme.get(
                                        "text", i is not None and selb and sele and selb <= (cy, i) <= sele,
-                                       cy == cursory),
+                                       cy == cursory and not isend),
                                    self.prio)
                 cursh += 1
                 i = None

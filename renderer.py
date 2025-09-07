@@ -1,13 +1,16 @@
 from utils import colorcvt, cvt_truecolor, copy_structure, stylecvt, ed_getch, gotoxy
 import os
 import copy
+import indents
 
 
 class Renderer:
-    def __init__(self, text: list[str], fill=None):
+    def __init__(self, parent, text: list[str], fill=None):
+        self.parent = parent
         self.fill = fill
         self.text = text
         self.all_tochange = []
+        self.ft = 'text'
 
     def render_all(self):
         ...
@@ -81,8 +84,81 @@ class Renderer:
             i.clear()
             i.append([])
 
-    def get_indent(self, y: int) -> str:
-        return ""
+    def get_one_indent(self):
+        return ' ' * self.parent.settings.tab_width if self.parent.settings.expand_tab else '\t'
+
+    def get_cur_indent(self, y: int):
+        s = ""
+        for i in self.text[y]:
+            if i.isspace():
+                s += i
+            else:
+                break
+        return s
+
+    def get_first_word(self, y: int):
+        if not self.text[y]:
+            return ''
+        for i, ch in enumerate(self.text[y]):
+            if not ch.isspace():
+                break
+        s = ""
+        for i in range(i, len(self.text[y])):
+            if ch.isalnum() or ch == '_':
+                s += self.text[y][i]
+            else:
+                break
+        return s
+
+    def get_indent(self, y: int, x: int) -> list[str]:
+        config = indents.indent_configs.get(self.ft, indents.indent_configs[''])
+        if not config:
+            return ['i\n']
+        if config[0] == 'c':
+            return self.cstyle_indent(y, x, *config[1:])
+        if config[0] == 'lisp':
+            return self.lisp_indent(y, x, *config[1:])
+        return ['i\n']
+
+    def lisp_indent(self, y: int, x: int, indent_kws: list[str]) -> list[str]:
+        pairlevel = 0
+        i = y
+        for j in range(x - 1, -1, -1):
+            if self.text[i][j] in ')]}':
+                pairlevel += 1
+            elif self.text[i][j] in '([{':
+                pairlevel -= 1
+                if pairlevel == -1:
+                    break
+        else:
+            for i in range(y - 1, -1, -1):
+                for j in range(len(self.text[i]) - 1, -1, -1):
+                    if self.text[i][j] in ')]}':
+                        pairlevel += 1
+                    elif self.text[i][j] in '([{':
+                        pairlevel -= 1
+                        if pairlevel == -1:
+                            break
+            else:
+                return ['i\n' + self.get_cur_indent(y)]
+        word = ""
+        for k in self.text[i][j + 1:]:
+            if k.isalnum() or k == '_':
+                word += k
+            else:
+                break
+        if word in indent_kws:
+            return ['i\n' + ' ' * j + self.get_one_indent()]
+        return ['i\n' + ' ' * j + ' ']
+
+    def cstyle_indent(self, y: int, x: int, indent_kws: list[str], indent_chs: str) -> list[str]:
+        if x == 0:
+            return ['i\n']
+        if self.text[y][x - 1] in indent_chs:
+            return ['i\n' + self.get_cur_indent(y) + self.get_one_indent()]
+        if self.get_first_word(y) in indent_kws:
+            return ['i\n' + self.get_cur_indent(y) + self.get_one_indent()]
+        return ['i\n' + self.get_cur_indent(y)]
 
 
 class Theme:
@@ -127,6 +203,13 @@ class Theme:
 #     "comment": (0x282828, 0x928374),
 #     "op": (0x282828, 0xEBDBB2),
 # }
+
+
+def trans_token(t: str):
+    if t in ts_compat:
+        return ts_compat[t]
+    return t
+
 
 ts_compat = {
     "keyword": "kw",
@@ -183,7 +266,6 @@ ts_compat = {
     "variable.member": "field",
     "variable.other.member": "field",
     "label": "id",
-    "_type": "class",
     "type": "class",
     "keyword.modifier": "kw",
     "type.definition": "class",
@@ -204,7 +286,6 @@ ts_compat = {
     "constructor": "func",
     "variable": "id",
     "string.documentation": "str",
-    "_re": "str",
     "re": "str",
     "string.regexp": "str",
     "none": "text",
@@ -349,7 +430,7 @@ catppuccin_mocha_theme = {
     "func": (0x1E1E2E, 0x89B4FA),
     "class": (0x1E1E2E, 0xF9E2AF),
     "module": (0x1E1E2E, 0xB4BEFE, ["italic"]),
-    "field": (0x1E1E2E, 0x73DACA),
+    "field": (0x1E1E2E, 0xEA9FAC),
     "param": (0x1E1E2E, 0xEBA0AC),
     "thisparam": (0x1E1E2E, 0xF38BA8),
     "error": (0xFF0000, 0xCDD6F4),

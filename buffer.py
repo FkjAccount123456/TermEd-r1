@@ -12,13 +12,11 @@ class BufferBase:
     def __init__(self):
         self.textinputer = TextInputer(self)
         self.text = self.textinputer.text
-        self.renderer: Renderer = get_renderer()(self.text)
+        self.renderer: Renderer = get_renderer()(self, self.text)
         self.y, self.x, self.ideal_x = 0, 0, 0
         self.sely, self.selx = 0, 0
         self.mode = "NORMAL"
         self.find_str = ""
-
-        self.tabsize = 4
 
         self.textinputer.save()
 
@@ -40,10 +38,14 @@ class BufferBase:
         self.y, self.x = self.textinputer.insert(self.y, self.x, s)
         self.ideal_x = self.x
 
-    def insert_tab(self, *_):
-        self.y, self.x = self.textinputer.insert(self.y, self.x,
-                                                 " " * self.tabsize)
-        self.ideal_x = self.x
+    def proc_indentcmd(self, cmd: list[str]):
+        for i in cmd:
+            if i[0] == 'i':
+                self.insert(i[1:])
+            else:
+                y, x = cmd.split(',')
+                self.y = int(y)
+                self.x = self.ideal_x = int(x)
 
     def get_range_to(self, move_fn: Callable, *args):
         y, x, ideal_x = self.y, self.x, self.ideal_x
@@ -108,13 +110,19 @@ class BufferBase:
 
     def key_normal_o(self, *_):
         self.key_normal_A()
-        self.insert("\n" + self.renderer.get_indent(self.y))
+        self.proc_indentcmd(self.renderer.get_indent(self.y, len(self.text[self.y])))
 
     def key_normal_O(self, *_):
         self.mode = "INSERT"
         self.x = self.ideal_x = 0
-        self.insert(self.renderer.get_indent(self.y - 1) + "\n")
-        self.cursor_prev_char()
+        if self.y:
+            self.y -= 1
+            self.x = self.ideal_x = len(self.text[self.y])
+            self.proc_indentcmd(self.renderer.get_indent(self.y, self.x))
+        else:
+            self.insert('\n')
+            self.y = 0
+            self.x = self.ideal_x = 0
 
     def key_normal_s(self, n=1):
         self.mode = "INSERT"

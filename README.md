@@ -9,7 +9,7 @@ git clone --recursive https://github.com/FkjAccount123456/TermEd.git
 ``` bash
 pip3 install -r requirements.txt
 ```
-- Compile C Libraries (only for highlighting currently)
+- Compile C Libraries
 ``` bash
 cd TermEd/
 python3 ./build.py  # use gcc as default

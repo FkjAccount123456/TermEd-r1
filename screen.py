@@ -14,9 +14,9 @@ class Screen:
 
     def update_size(self, h: int, w: int):
         self.h, self.w = h, w
-        self.data = [[" " for i in range(w)] for j in range(h)]
-        self.color = [["" for i in range(w)] for j in range(h)]
-        self.prio = [[0 for i in range(w)] for j in range(h)]
+        self.data = [[" " for _ in range(w)] for _ in range(h)]
+        self.color = [["" for _ in range(w)] for _ in range(h)]
+        self.prio = [[0 for _ in range(w)] for _ in range(h)]
 
     def change(self, y: int, x: int, ch: str, color: str, prio=0):
         if y < 0 or x < 0 or y >= self.h or x >= self.w:

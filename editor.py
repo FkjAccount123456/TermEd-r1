@@ -3,7 +3,7 @@ from renderer import Theme, themes
 from renderers.renderers import get_renderer
 from screen import Screen, VScreen
 from utils import ed_getch, flush, get_char_type, get_file_ext, get_width, log, gotoxy
-from drawer import Drawer
+from drawer import Drawer, DrawerSettings
 from buffer import BufferBase
 from ederrors import *
 from tagparse import parse_tags_file, tags_navigate, merge_tags, TagEntry, FileEntry
@@ -15,6 +15,8 @@ import time
 import threading as tr
 from queue import Queue
 import multiprocessing as mp
+from dataclasses import dataclass
+from filetypes import get_filetype
 
 
 def check_tree(win: "Window"):
@@ -95,6 +97,9 @@ class FileBase(BufferBase):
     def reset_scroll(self):
         ...
 
+    def init_settings(self):
+        ...
+
     def reopen(self):
         assert self.file
         with open(self.file, "r", encoding="utf-8") as f:
@@ -103,7 +108,7 @@ class FileBase(BufferBase):
         self.textinputer.insert(0, 0, text)
         self.y = self.ideal_x = self.x = 0
         self.textinputer.save()
-        self.renderer = get_renderer(get_file_ext(self.file))(self.text)
+        self.renderer = get_renderer(self.file)(self, self.text)
 
     def load_existed(self, path: str):
         # 大换血啊（
@@ -126,6 +131,7 @@ class FileBase(BufferBase):
             if self.file and (force or self.textinputer.is_saved()) and os.path.exists(self.file):
                 try:
                     self.reopen()
+                    self.init_settings()
                     return 'Reopened ' + self.file
                 except:
                     return 'Reopen failed'
@@ -137,6 +143,7 @@ class FileBase(BufferBase):
                 if force and not self.textinputer.is_saved() and os.path.exists(self.file):
                     try:
                         self.reopen()
+                        self.init_settings()
                         return 'Reopened ' + self.file
                     except:
                         return 'Reopen failed'
@@ -158,7 +165,7 @@ class FileBase(BufferBase):
             if not os.path.exists(self.file):
                 self.textinputer = TextInputer(self)
                 self.text = self.textinputer.text
-                self.renderer = get_renderer(get_file_ext(self.file))(self.text)
+                self.renderer = get_renderer(self.file)(self, self.text)
                 self.reset_drawer()
                 self.y = self.ideal_x = self.x = 0
                 self.textinputer.save()
@@ -169,7 +176,7 @@ class FileBase(BufferBase):
                         text = f.read()
                     self.textinputer = TextInputer(self)
                     self.text = self.textinputer.text
-                    self.renderer = get_renderer(get_file_ext(self.file))(self.text)
+                    self.renderer = get_renderer(self.file)(self, self.text)
                     self.textinputer.insert(0, 0, text)
                     self.reset_drawer()
                     self.y = self.ideal_x = self.x = 0
@@ -177,6 +184,7 @@ class FileBase(BufferBase):
                     self.textinputer.save()
                     msg = f'Opened {self.file}'
                 except:
+                    raise
                     msg = f'Failed to open {self.file}'
                     self.file = old
         if old:
@@ -185,6 +193,7 @@ class FileBase(BufferBase):
             if os.path.abspath(self.file) not in self.editor.fb_maps:
                 self.editor.fb_maps[os.path.abspath(self.file)] = set()
             self.editor.fb_maps[os.path.abspath(self.file)].add(self)
+        self.init_settings()
         return msg
 
     def open_file(self, arg: str, force=False):
@@ -204,8 +213,8 @@ class FileBase(BufferBase):
                     with open(self.file, "w", encoding="utf-8") as f:
                         f.write("\n".join(self.text))
                     self.textinputer.save()
-                    if not old_file or get_file_ext(self.file) != get_file_ext(old_file):
-                        self.renderer = get_renderer(get_file_ext(self.file))(self.text)
+                    if not old_file or get_filetype(self.file) != get_filetype(old_file):
+                        self.renderer = get_renderer(self.file)(self, self.text)
                     msg = f'Saved {self.file}'
                 except:
                     self.file = old_file
@@ -1293,6 +1302,13 @@ class TagBar(MenuBuffer):
                   "modeline", PrioBuffer)
 
 
+@dataclass
+class TextBufferSettings:
+    linum: bool = True
+    tab_width: int = 4
+    expand_tab: bool = True
+
+
 class TextBuffer(Buffer, FileBase):
     def __init__(self, top: int, left: int, h: int, w: int,
                  editor: "Editor", parent: "tuple[Split, bool] | None"):
@@ -1301,7 +1317,7 @@ class TextBuffer(Buffer, FileBase):
         self.prio = PrioBuffer
         self.file: str | None = None
         self.drawer = Drawer(editor.screen, self.text, self.left, self.top,
-                             self.h - 1, self.w, editor, True, self.prio)
+                             self.h - 1, self.w, editor, DrawerSettings(), self.prio)
 
         # 2025-4-30
         # 仅实验性功能，不确定是否长期保留
@@ -1499,6 +1515,22 @@ class TextBuffer(Buffer, FileBase):
             "w": cmdcmp_files,
         }
 
+        self.settings = TextBufferSettings()
+
+    def init_settings(self):
+        self.settings = TextBufferSettings()
+        if self.file:
+            ft = get_filetype(self.file)
+            if ft in ('c', 'cpp', 'json'):
+                self.settings.tab_width = 2
+            elif ft in ('make'):
+                self.settings.expand_tab = False
+
+        self.update_settings()
+
+    def update_settings(self):
+        self.drawer.update_settings(DrawerSettings(self.settings.linum, self.settings.tab_width))
+
     def debug_inspect(self, *n):
         try:
             gotoxy(self.editor.h, 1)
@@ -1609,14 +1641,18 @@ class TextBuffer(Buffer, FileBase):
         if self.cmp_menu:
             self.cmp_menu_accept()
         else:
-            self.insert("\n")
-            self.insert(self.renderer.get_indent(self.y - 1))
+            self.proc_indentcmd(self.renderer.get_indent(self.y, self.x))
 
     def key_tab(self, *_):
         if self.cmp_menu:
             self.cmp_select_next()
         else:
             self.insert_tab()
+
+    def insert_tab(self, *_):
+        self.y, self.x = self.textinputer.insert(self.y, self.x,
+                                                 " " * self.settings.tab_width if self.settings.expand_tab else "\t")
+        self.ideal_x = self.x
 
     def cursor_pageup(self, n: int = 1):
         for _ in range(n):
@@ -1849,9 +1885,9 @@ class deprecated_TextWindow(Window):
         super().__init__(top, left, h, w, editor, parent)
         self.name = name
         self.text = [""]
-        self.renderer = get_renderer()(self.text)
+        self.renderer = get_renderer()(self, self.text)
         self.drawer = Drawer(editor.screen, self.text, self.left, self.top,
-                             self.h - 1, self.w, editor, True, 0)
+                             self.h - 1, self.w, editor, DrawerSettings(), 0)
 
     def add_log(self, s: str):
         self.text.insert(len(self.text) - 1, s)

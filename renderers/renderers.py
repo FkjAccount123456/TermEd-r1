@@ -5,12 +5,12 @@ import sys
 import multiprocessing as mp
 import multiprocessing.reduction as mpreduction
 import io
-from .filetypes import filetypes
+from filetypes import get_filetype
 from .queryparse import preprocess_query, read_scm
 
 
 class PlainTextRenderer(Renderer):
-    def __init__(self, text: list[str]): ...
+    def __init__(self, *_): ...
 
     def insert(self, *_): ...
 
@@ -81,7 +81,7 @@ def render_process(lang, text: list[str], cmd: mp.Queue, res: mp.Queue, queries:
             query.set_byte_range(lb, rb)
         captures = query.captures(tree.root_node).items()
         for group, nodes in captures:
-            if group.startswith('_'):
+            if group.startswith('_') or group == 'spell':
                 continue
             ndots = group.count('.')
             for node in nodes:
@@ -217,8 +217,8 @@ def render_process(lang, text: list[str], cmd: mp.Queue, res: mp.Queue, queries:
 
 def gen_renderer(lang, queries: str) -> type[Renderer]:
     class Res(Renderer):
-        def __init__(self, text: list[str]):
-            super().__init__(text, '')
+        def __init__(self, parent, text: list[str]):
+            super().__init__(parent, text, '')
             self.cmd = mp.Queue()
             self.res = mp.Queue()
             self.renderer = mp.Process(target=render_process, args=(lang, text, self.cmd, self.res, queries), daemon=True)
@@ -226,6 +226,7 @@ def gen_renderer(lang, queries: str) -> type[Renderer]:
             self.buf = copy_structure(text, fill='')
             self.all_tochange.append(self.buf)
             self.need_render = True
+            self.ft = lang
 
         def __del__(self):
             self.cmd.put(('q',))
@@ -282,8 +283,8 @@ renderers_table: dict[str, type[Renderer]] = {
 finalizers = []
 
 
-def get_renderer(ft: str = '') -> type[Renderer]:
-    ft = filetypes.get(ft, 'plaintext')
+def get_renderer(file: str = '') -> type[Renderer]:
+    ft = get_filetype(file)
     if ft not in renderers_table:
         queries = read_scm(ft)
         queries = preprocess_query(queries)

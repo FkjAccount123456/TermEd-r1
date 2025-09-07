@@ -1,3 +1,6 @@
+from utils import get_file_ext
+import os
+
 filetypes = {
     'ada': 'ada',
     's': 'asm',
@@ -74,3 +77,11 @@ filetypes = {
     'vimdoc': 'vimdoc',
     'iml': 'xml',
 }
+
+def get_filetype(file: str):
+    file = os.path.basename(file).lower()
+    if ext := get_file_ext(file):
+        return filetypes.get(ext, 'plaintext')
+    if file == 'makefile':
+        return 'make'
+    return 'plaintext'
