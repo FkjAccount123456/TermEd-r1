@@ -184,7 +184,6 @@ class FileBase(BufferBase):
                     self.textinputer.save()
                     msg = f'Opened {self.file}'
                 except:
-                    raise
                     msg = f'Failed to open {self.file}'
                     self.file = old
         if old:
@@ -550,7 +549,7 @@ class FuzzyFinder(InputBox):
 
     def input_right(self, *_):
         self.x = min(self.x + 1, len(self.input_text))
-    
+
     def input_head(self, *_):
         self.x = 0
 
@@ -2028,6 +2027,65 @@ class Split(Window):
                                           self.editor.theme.get("text", False))
 
 
+# 写个简单的状态机还是很简单的
+class KeyReader:
+    def __init__(self, editor: "Editor"):
+        self.editor = editor
+        self.nrep = -1
+        self.k = self.ck = None
+        self.key_seq = []
+
+    def read_key(self, key: str):
+        self.key_seq.append(key)
+        mode = self.editor.get_mode()
+        if mode not in ("COMMAND", "INSERT") and len(key) == 1 and key.isdigit() and (key != '0' or self.nrep != -1):
+            if self.nrep != -1:
+                self.nrep *= 10
+                self.nrep += int(key)
+            else:
+                self.nrep = int(key)
+            return
+
+        if not self.k and not self.ck:
+            if key in self.editor.keymap[mode]:
+                self.k = self.editor.keymap[mode][key]
+            if key in self.editor.cur.keymap[mode]:
+                self.ck = self.editor.cur.keymap[mode][key]
+        else:
+            if self.k:
+                if key in self.k:
+                    self.k = self.k[key]
+                else:
+                    k = None
+            if self.ck:
+                if key in self.ck:
+                    self.ck = self.ck[key]
+                else:
+                    self.ck = None
+
+        if callable(self.k):
+            nrep, self.nrep = self.nrep, -1
+            k, self.k = self.k, None
+            key_seq, self.key_seq = self.key_seq, []
+            self.ck = None
+            return nrep, k, key_seq
+        elif not isinstance(self.k, dict):
+            self.k = None
+        if callable(self.ck):
+            nrep, self.nrep = self.nrep, -1
+            ck, self.ck = self.ck, None
+            key_seq, self.key_seq = self.key_seq, []
+            self.k = None
+            return nrep, ck, key_seq
+        elif not isinstance(self.ck, dict):
+            self.ck = None
+
+        if not self.k and not self.ck:
+            key_seq, self.key_seq = self.key_seq, []
+            self.nrep = -1
+            return key_seq
+
+
 class Editor:
     def __init__(self, h: int, w: int):
         self.win_ids = {}
@@ -2043,6 +2101,7 @@ class Editor:
         self.cur_key: str = ""
         self.reader_queue = Queue()
         self.reader = tr.Thread(target=getch_process, args=(self.reader_queue,), daemon=True)
+        self.keyreader = KeyReader(self)
         # self.getch_thread = Thread(target=self.getch, args=(), daemon=True)
 
         # 记得手动注册<cr> <tab> <space>
@@ -2420,7 +2479,7 @@ class Editor:
         def func():
             self.cur_cmd = self.cur_cmd[:self.cmd_pos - ndel] + ins + self.cur_cmd[self.cmd_pos:]
             self.cmd_pos = self.cmd_pos - ndel + len(ins)
-        
+
         return func
 
     def cmd_fill_cmp(self):
@@ -2524,6 +2583,11 @@ class Editor:
                                self.theme.get("text", False))
             sh += 1
 
+        if mode != 'COMMAND':
+            keyecho = "".join(self.keyreader.key_seq)
+            kew = sum(map(get_width, keyecho))
+            draw_text(self.cur, self.h - 1, self.w - 1 - kew - 5, kew, keyecho, "text", 1)
+
         if mode == 'COMMAND' and self.cmp_menu:
             y, x = set_cursor  # type: ignore
             menu_h, menu_dir = self.get_menu_height(y)
@@ -2588,52 +2652,6 @@ class Editor:
             self.update_size()
         return self.reader_queue.get()
 
-    def read_keyseq(self, source: Callable) -> list[str] | tuple[int, Callable, list[str]]:
-        key = source()
-        nrep = -1
-        mode = self.get_mode()
-        if mode not in ("COMMAND", "INSERT") and len(key) == 1 and key.isdigit() and key != '0':
-            num = key
-            key = source()
-            while len(key) == 1 and key.isdigit():
-                num += key
-                key = source()
-            nrep = int(num)
-        keys = [key]
-        if key in self.keymap[mode] or key in self.cur.keymap[mode]:
-            if key in self.keymap[mode]:
-                k = self.keymap[mode][key]
-            else:
-                k = None
-            if key in self.cur.keymap[mode]:
-                ck = self.cur.keymap[mode][key]
-            else:
-                ck = None
-            while isinstance(k, dict) or isinstance(ck, dict):
-                key = source()
-                keys.append(key)
-                if k and key in k:
-                    k = k[key]
-                    if callable(k):
-                        return nrep, k, keys
-                    elif not isinstance(k, dict):
-                        k = None
-                else:
-                    k = None
-                if ck and key in ck:
-                    ck = ck[key]
-                    if callable(ck):
-                        return nrep, ck, keys
-                    elif not isinstance(ck, dict):
-                        ck = None
-                else:
-                    ck = None
-            if callable(k):
-                return nrep, k, keys
-            elif callable(ck):
-                return nrep, ck, keys
-        return keys
-
     def mainloop(self):
         global running
         self.running = True
@@ -2656,30 +2674,32 @@ class Editor:
             if self.reader_queue.empty():
                 self.draw()
 
-            keyseq = self.read_keyseq(self.async_getch)
-            # import utils
-            # utils.gotoxy(self.h + 1, 1)
-            # print(keyseq, self.mode, self.get_mode(), end="")
-            mode = self.get_mode()
-            if isinstance(keyseq, tuple):
-                nrep, k, keys = keyseq
-                if callable(k):
-                    if nrep == -1:
-                        k()
-                    else:
-                        k(nrep)
-                    if len(keys) == 1 and keys[0] not in ("<C-n>", "<C-p>", "<tab>", "<bs>"):
+            # keyseq = self.read_keyseq(self.async_getch)
+            keyseq = self.keyreader.read_key(self.async_getch())
+            if keyseq:
+                # import utils
+                # utils.gotoxy(self.h + 1, 1)
+                # print(keyseq, self.mode, self.get_mode(), end="")
+                mode = self.get_mode()
+                if isinstance(keyseq, tuple):
+                    nrep, k, keys = keyseq
+                    if callable(k):
+                        if nrep == -1:
+                            k()
+                        else:
+                            k(nrep)
+                        if len(keys) == 1 and keys[0] not in ("<C-n>", "<C-p>", "<tab>", "<bs>"):
+                            need_cmp = False
+                elif mode == "INSERT" and len(keyseq) == len(keyseq[0]) == 1:
+                    if isinstance(self.cur, TextBuffer):
+                        self.cur.insert(keyseq[0])
+                        need_cmp = True
+                    elif isinstance(self.cur, InputBox):
+                        self.cur.insert(keyseq[0])
                         need_cmp = False
-            elif mode == "INSERT" and len(keyseq) == len(keyseq[0]) == 1:
-                if isinstance(self.cur, TextBuffer):
-                    self.cur.insert(keyseq[0])
-                    need_cmp = True
-                elif isinstance(self.cur, InputBox):
-                    self.cur.insert(keyseq[0])
+                elif mode == "COMMAND" and len(keyseq) == len(keyseq[0]) == 1:
+                    self.cmd_insert(keyseq[0])
                     need_cmp = False
-            elif mode == "COMMAND" and len(keyseq) == len(keyseq[0]) == 1:
-                self.cmd_insert(keyseq[0])
-                need_cmp = False
 
             if not self.winmove_seq or self.cur != self.winmove_seq[-1]:
                 self.winmove_seq.append(self.cur.id)
