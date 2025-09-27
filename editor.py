@@ -1424,13 +1424,21 @@ class TextBuffer(Buffer, FileBase):
                 "(": self.cursor_prev_paragragh,
                 ")": self.cursor_next_paragragh,
 
-                "d": self.merge_dict(self.gen_readpos_keymap(self.delete_to, self.delete_in), {
-                    "d": lambda *n: self.key_del_line(*n),
-                }),
-                "c": self.gen_readpos_keymap(self.change_to, self.change_in),
-                "y": self.merge_dict(self.gen_readpos_keymap(self.yank_to, self.yank_in), {
-                    "y": lambda *n: self.key_yank_line(*n),
-                }),
+                # "d": self.merge_dict(self.gen_readpos_keymap(self.delete_to, self.delete_in), {
+                #     "d": lambda *n: self.key_del_line(*n),
+                # }),
+                # "c": self.gen_readpos_keymap(self.change_to, self.change_in),
+                # "y": self.merge_dict(self.gen_readpos_keymap(self.yank_to, self.yank_in), {
+                #     "y": lambda *n: self.key_yank_line(*n),
+                # }),
+
+                "d": KeyWrapper(self.delete_in, self.gen_wrapper_keymap({
+                    "d": self.get_range_cur_line,
+                })),
+                "c": KeyWrapper(self.change_in, self.gen_wrapper_keymap({})),
+                "y": KeyWrapper(self.yank_in, self.gen_wrapper_keymap({
+                    "y": self.get_range_cur_line,
+                })),
 
                 "<C-]>": self.goto_tagfind,
             },
@@ -1565,57 +1573,59 @@ class TextBuffer(Buffer, FileBase):
                 k1[k] = v
         return k1
 
-    def gen_readpos_keymap(self, fn_to: Callable, fn_in: Callable):
-        return {
-            "h": lambda *n: fn_to(self.cursor_left, *n),
-            "l": lambda *n: fn_to(self.cursor_right, *n),
-            "k": lambda *n: fn_to(self.cursor_up, *n),
-            "j": lambda *n: fn_to(self.cursor_down, *n),
-            "<up>": lambda *n: fn_to(self.cursor_up, *n),
-            "<down>": lambda *n: fn_to(self.cursor_down, *n),
-            "<left>": lambda *n: fn_to(self.cursor_left, *n),
-            "<right>": lambda *n: fn_to(self.cursor_right, *n),
-            "<pageup>": lambda *n: fn_to(self.cursor_pageup, *n),
-            "<pagedown>": lambda *n: fn_to(self.cursor_pagedown, *n),
-            "<home>": lambda *n: fn_to(self.cursor_home, *n),
-            "<end>": lambda *n: fn_to(self.cursor_end, *n),
-            "w": lambda *n: fn_to(self.cursor_next_word_end, *n),
-            "e": lambda *n: fn_to(self.cursor_next_word_end, *n),
-            "b": lambda *n: fn_to(self.cursor_prev_word, *n),
+    def gen_wrapper_keymap(self, to_merge: dict):
+        keymap = {
+            "h": self.gen_rangeto_fn(self.cursor_left),
+            "l": self.gen_rangeto_fn(self.cursor_right),
+            "k": self.gen_rangeto_fn(self.cursor_up),
+            "j": self.gen_rangeto_fn(self.cursor_down),
+            "<up>": self.gen_rangeto_fn(self.cursor_up),
+            "<down>": self.gen_rangeto_fn(self.cursor_down),
+            "<left>": self.gen_rangeto_fn(self.cursor_left),
+            "<right>": self.gen_rangeto_fn(self.cursor_right),
+            "<pageup>": self.gen_rangeto_fn(self.cursor_pageup),
+            "<pagedown>": self.gen_rangeto_fn(self.cursor_pagedown),
+            "<home>": self.gen_rangeto_fn(self.cursor_home),
+            "<end>": self.gen_rangeto_fn(self.cursor_end),
+            "w": self.gen_rangeto_fn(self.cursor_next_word_end),
+            "e": self.gen_rangeto_fn(self.cursor_next_word_end),
+            "b": self.gen_rangeto_fn(self.cursor_prev_word),
             "g": {
-                "g": lambda *n: fn_to(self.cursor_head, *n),
+                "g": self.gen_rangeto_fn(self.cursor_head),
             },
-            "G": lambda *n: fn_to(self.cursor_tail, *n),
-            "0": lambda *n: fn_to(self.cursor_head, *n),
-            "$": lambda *n: fn_to(self.cursor_tail, *n),
-            "^": lambda *n: fn_to(self.cursor_start, *n),
-            " ": lambda *n: fn_to(self.cursor_next_char, *n),
-            "<bs>": lambda *n: fn_to(self.cursor_prev_char, *n),
-            "f": lambda *n: fn_to(self.cursor_fnxt_char, *n),
-            "F": lambda *n: fn_to(self.cursor_fprv_char, *n),
-            "n": lambda *n: fn_to(self.find_next, *n),
-            "N": lambda *n: fn_to(self.find_prev, *n),
-            "%": lambda *n: fn_to(self.goto_match, *n),
-            "{": lambda *n: fn_to(self.cursor_prev_paragragh, *n),
-            "}": lambda *n: fn_to(self.cursor_next_paragragh, *n),
-            "(": lambda *n: fn_to(self.cursor_prev_paragragh, *n),
-            ")": lambda *n: fn_to(self.cursor_next_paragragh, *n),
+            "G": self.gen_rangeto_fn(self.cursor_tail),
+            "0": self.gen_rangeto_fn(self.cursor_head),
+            "$": self.gen_rangeto_fn(self.cursor_tail),
+            "^": self.gen_rangeto_fn(self.cursor_start),
+            " ": self.gen_rangeto_fn(self.cursor_next_char),
+            "<bs>": self.gen_rangeto_fn(self.cursor_prev_char),
+            "f": self.gen_rangeto_fn(self.cursor_fnxt_char),
+            "F": self.gen_rangeto_fn(self.cursor_fprv_char),
+            "n": self.gen_rangeto_fn(self.find_next),
+            "N": self.gen_rangeto_fn(self.find_prev),
+            "%": self.gen_rangeto_fn(self.goto_match),
+            "{": self.gen_rangeto_fn(self.cursor_prev_paragragh),
+            "}": self.gen_rangeto_fn(self.cursor_next_paragragh),
+            "(": self.gen_rangeto_fn(self.cursor_prev_paragragh),
+            ")": self.gen_rangeto_fn(self.cursor_next_paragragh),
 
             "i": {
-                "w": lambda *n: fn_in(self.get_range_cur_word, *n),
-                "(": lambda *n: fn_in(lambda: self.get_range_match("(", True), *n),
-                "[": lambda *n: fn_in(lambda: self.get_range_match("[", True), *n),
-                "{": lambda *n: fn_in(lambda: self.get_range_match("{", True), *n),
-                "<": lambda *n: fn_in(lambda: self.get_range_match("<", True), *n),
+                "w": lambda *_: self.get_range_cur_word(),
+                "(": lambda *_: self.get_range_match("(", True),
+                "[": lambda *_: self.get_range_match("[", True),
+                "{": lambda *_: self.get_range_match("{", True),
+                "<": lambda *_: self.get_range_match("<", True),
             },
             "a": {
-                "w": lambda *n: fn_in(self.get_range_cur_word, *n),
-                "(": lambda *n: fn_in(lambda: self.get_range_match("("), *n),
-                "[": lambda *n: fn_in(lambda: self.get_range_match("["), *n),
-                "{": lambda *n: fn_in(lambda: self.get_range_match("{"), *n),
-                "<": lambda *n: fn_in(lambda: self.get_range_match("<"), *n),
+                "w": lambda *_: self.get_range_cur_word(),
+                "(": lambda *_: self.get_range_match("("),
+                "[": lambda *_: self.get_range_match("["),
+                "{": lambda *_: self.get_range_match("{"),
+                "<": lambda *_: self.get_range_match("<"),
             },
         }
+        keymap = self.merge_dict(keymap, to_merge)
+        return keymap
 
     def reset_drawer(self):
         self.drawer.text = self.textinputer.text
@@ -2027,6 +2037,12 @@ class Split(Window):
                                           self.editor.theme.get("text", False))
 
 
+class KeyWrapper:
+    def __init__(self, fn: Callable, keymap: dict):
+        self.fn = fn
+        self.keymap = keymap
+
+
 # 写个简单的状态机还是很简单的
 class KeyReader:
     def __init__(self, editor: "Editor"):
@@ -2034,6 +2050,21 @@ class KeyReader:
         self.nrep = -1
         self.k = self.ck = None
         self.key_seq = []
+        self.wrappers: list[tuple[Callable, int]] = []
+        self.subkey: dict | None = None
+
+    def _pack_fn(self, fn: Callable, res: Callable, *args):
+        return lambda *n: fn(lambda: res(*args), *n)
+
+    def get_wrapped(self, fn: Callable, nrep: int):
+        res = fn
+        for fn, cur_nrep in self.wrappers:
+            if nrep != -1:
+                res = self._pack_fn(fn, res, nrep)
+            else:
+                res = self._pack_fn(fn, res)
+            nrep = cur_nrep
+        return nrep, res
 
     def read_key(self, key: str):
         self.key_seq.append(key)
@@ -2046,7 +2077,13 @@ class KeyReader:
                 self.nrep = int(key)
             return
 
-        if not self.k and not self.ck:
+        if self.wrappers:
+            if key in self.subkey:  # type: ignore
+                self.subkey = self.subkey[key]  # type: ignore
+            else:
+                self.subkey = None
+                self.wrappers = []
+        elif not self.k and not self.ck:
             if key in self.editor.keymap[mode]:
                 self.k = self.editor.keymap[mode][key]
             if key in self.editor.cur.keymap[mode]:
@@ -2063,22 +2100,45 @@ class KeyReader:
                 else:
                     self.ck = None
 
-        if callable(self.k):
-            nrep, self.nrep = self.nrep, -1
-            k, self.k = self.k, None
-            key_seq, self.key_seq = self.key_seq, []
-            self.ck = None
-            return nrep, k, key_seq
-        elif not isinstance(self.k, dict):
-            self.k = None
-        if callable(self.ck):
-            nrep, self.nrep = self.nrep, -1
-            ck, self.ck = self.ck, None
-            key_seq, self.key_seq = self.key_seq, []
-            self.k = None
-            return nrep, ck, key_seq
-        elif not isinstance(self.ck, dict):
-            self.ck = None
+        # 我说白了，能跑就不要动
+        # 不过确实堆成答辩了
+        if self.wrappers:
+            if callable(self.subkey) or isinstance(self.subkey, KeyWrapper):
+                nrep, self.nrep = self.nrep, -1
+                subkey, self.subkey = self.subkey, None
+                if isinstance(subkey, KeyWrapper):
+                    self.wrappers.append((subkey.fn, nrep))
+                    self.subkey = subkey.keymap
+                    return
+                key_seq, self.key_seq = self.key_seq, []
+                wrapped = self.get_wrapped(subkey, nrep)
+                self.wrappers = []
+                return *wrapped, key_seq
+        else:
+            if callable(self.k) or isinstance(self.k, KeyWrapper):
+                nrep, self.nrep = self.nrep, -1
+                k, self.k = self.k, None
+                self.ck = None
+                if isinstance(k, KeyWrapper):
+                    self.wrappers.append((k.fn, nrep))
+                    self.subkey = k.keymap
+                    return
+                key_seq, self.key_seq = self.key_seq, []
+                return nrep, k, key_seq
+            elif not isinstance(self.k, dict):
+                self.k = None
+            if callable(self.ck) or isinstance(self.ck, KeyWrapper):
+                nrep, self.nrep = self.nrep, -1
+                ck, self.ck = self.ck, None
+                self.k = None
+                if isinstance(ck, KeyWrapper):
+                    self.wrappers.append((ck.fn, nrep))
+                    self.subkey = ck.keymap
+                    return
+                key_seq, self.key_seq = self.key_seq, []
+                return nrep, ck, key_seq
+            elif not isinstance(self.ck, dict):
+                self.ck = None
 
         if not self.k and not self.ck:
             key_seq, self.key_seq = self.key_seq, []
@@ -2586,7 +2646,7 @@ class Editor:
         if mode != 'COMMAND':
             keyecho = "".join(self.keyreader.key_seq)
             kew = sum(map(get_width, keyecho))
-            draw_text(self.cur, self.h - 1, self.w - 1 - kew - 5, kew, keyecho, "text", 1)
+            draw_text(self.gwin, self.h - 1, self.w - 1 - kew - 5, kew, keyecho, "text", 1)
 
         if mode == 'COMMAND' and self.cmp_menu:
             y, x = set_cursor  # type: ignore

@@ -20,6 +20,7 @@ main-temp.py
 .idea/
 .fleet/
 test*
+tests/
 *project/
 queries/*
 *.history

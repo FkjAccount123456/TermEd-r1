@@ -57,17 +57,18 @@ class BufferBase:
         return (y, x), (y1, x1)
 
     def gen_rangeto_fn(self, move_fn: Callable, *args):
-        return lambda: self.get_range_to(move_fn, *args)
+        return lambda *n: self.get_range_to(move_fn, *args, *n)
 
     def delete_to(self, move_fn: Callable, *args):
         (y, x), (y1, x1) = self.get_range_to(move_fn, *args)
         self.textinputer.delete(y, x, y1, x1)
 
-    def delete_in(self, range_fn: Callable, *args):
-        r = range_fn(*args)
-        if r:
-            self.y, self.x = self.textinputer.delete(*r[0], *r[1])
-            self.ideal_x = self.x
+    def delete_in(self, range_fn: Callable, n=1):
+        for _ in range(n):
+            r = range_fn()
+            if r:
+                self.y, self.x = self.textinputer.delete(*r[0], *r[1])
+                self.ideal_x = self.x
 
     def change_to(self, move_fn: Callable, *args):
         self.delete_to(move_fn, *args)
@@ -81,8 +82,8 @@ class BufferBase:
         (y, x), (y1, x1) = self.get_range_to(move_fn, *args)
         copy(self.textinputer.get(y, x, y1, x1))
 
-    def yank_in(self, range_fn: Callable, *args):
-        r = range_fn(*args)
+    def yank_in(self, range_fn: Callable, *_):
+        r = range_fn()
         if r:
             copy(self.textinputer.get(*r[0], *r[1]))
 
@@ -391,6 +392,9 @@ class BufferBase:
             self.cursor_prev_char()
             while self.at_cursor() != ch and not (self.y == self.x == 0):
                 self.cursor_prev_char()
+
+    def get_range_cur_line(self, *_) -> None | tuple[tuple[int, int], tuple[int, int]]:
+        return (self.y, 0), (self.y, len(self.text[self.y]))
 
     def get_range_cur_word(self) -> None | tuple[tuple[int, int], tuple[int, int]]:  # 闭区间
         y, x = self.y, self.x

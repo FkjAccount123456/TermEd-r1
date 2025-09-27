@@ -25,7 +25,7 @@ python3 ./termed.py ./file.py  # open a file
 # Editor Usage
 ## Keymaps
 TermEd is a terminal editor with vim-like model-editing and keymaps, so most of the basic keymaps in Vim can be used in TermEd, such as ```w``` for going to the beginning of next word.
-Repeat time can be specified behind operations. Specifying counts for text objects is not supported currently.
+Repeat time can be specified behind operations. Specifying counts (such as ```d3w```) for text objects is supported now.
 There are also something different from Vim:
 - When entering ```<C-]>```, TermEd will find the symbol under cursor and jump to it according to tags file, or pop up a float window for selecting a definition if there are multiple definitions.
 - ```;st``` can be used to select a theme, a window will pop up and the changes can be immediately shown in the editor.
