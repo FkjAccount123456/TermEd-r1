@@ -17,6 +17,9 @@ if sys.platform == "win32":
             return '\x00'
         return ch
 
+    def init_term():
+        ...
+
     def reset_term():
         ...
 
@@ -29,13 +32,17 @@ else:
     import termios
     import tty
 
-    fd = sys.stdin.fileno()
-    old = copy.deepcopy(termios.tcgetattr(fd))
-    tty.setraw(fd)
-    new = termios.tcgetattr(fd)
-    new[tty.CC][termios.VMIN] = 0
-    new[tty.CC][termios.VTIME] = 1
-    termios.tcsetattr(fd, termios.TCSADRAIN, new)
+    fd = old = new = None
+
+    def init_term():
+        global fd, old, new
+        fd = sys.stdin.fileno()
+        old = copy.deepcopy(termios.tcgetattr(fd))
+        tty.setraw(fd)
+        new = termios.tcgetattr(fd)
+        new[tty.CC][termios.VMIN] = 0
+        new[tty.CC][termios.VTIME] = 1
+        termios.tcsetattr(fd, termios.TCSADRAIN, new)
 
     def getch():
         if input_buf:

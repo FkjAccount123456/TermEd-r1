@@ -18,6 +18,11 @@ class Screen:
         self.color = [["" for _ in range(w)] for _ in range(h)]
         self.prio = [[0 for _ in range(w)] for _ in range(h)]
 
+    def update_all(self):
+        for y in range(self.h):
+            for x in range(self.w):
+                self.changed.add((y, x))
+
     def change(self, y: int, x: int, ch: str, color: str, prio=0):
         if y < 0 or x < 0 or y >= self.h or x >= self.w:
             return

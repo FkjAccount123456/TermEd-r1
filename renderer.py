@@ -72,7 +72,7 @@ class Renderer:
     def render(self, ln: int, col: int):
         ...
 
-    def check_update(self):
+    def check_update(self) -> bool:
         return False
 
     def get(self, y: int, x: int) -> str:

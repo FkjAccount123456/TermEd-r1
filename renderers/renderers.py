@@ -24,14 +24,14 @@ def init_mp():
 
     mp.freeze_support()
     original_pickler = mpreduction.ForkingPickler
-    
+
     class PatchedPickler(original_pickler):
         @classmethod
         def dumps(cls, obj, protocol=None):
             buf = io.BytesIO()
             cls(buf, protocol).dump(obj)
             return buf.getvalue()
-    
+
     mpreduction.ForkingPickler = PatchedPickler
     mpreduction.dumps = PatchedPickler.dumps  # type: ignore
 
@@ -42,7 +42,7 @@ def calc_unicodex(s: str, x: int):
     except Exception as e:
         print((s, x, len(s.encode())))
         raise e
-    
+
 
 type RenderCommand = tuple
 
@@ -57,7 +57,7 @@ def render_process(lang, text: list[str], cmd: mp.Queue, res: mp.Queue, queries:
             c = cmd.get()
             cmdbuf.insert(0, c)
             return c
-        
+
     def cmd_get():
         if cmdbuf:
             return cmdbuf.pop()
@@ -101,7 +101,7 @@ def render_process(lang, text: list[str], cmd: mp.Queue, res: mp.Queue, queries:
                 lb += len(new)
             btext += new
         return btext, lb
-    
+
     def get_as_bytes2(y: int, x: int, q: int, p: int):
         lb, rb = 0, 0
         btext = b""
@@ -244,13 +244,13 @@ def gen_renderer(lang, queries: str) -> type[Renderer]:
             super().delete(y, x, q, p)
             self.cmd.put(('d', y, x, q, p))
             self.need_render = True
-        
+
         def render(self, *_):
             pass
 
         def check_update(self):
             return not self.res.empty()
-        
+
         def clear(self):
             self.cmd.put(('c',))
             super().clear()

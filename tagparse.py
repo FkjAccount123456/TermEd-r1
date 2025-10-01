@@ -5,7 +5,9 @@ type FileEntry = tuple[str, tuple[int, int]]
 
 
 def parse_tags_file(tags_path: str) -> dict[str, list[TagEntry]]:
-    tag_base = os.path.dirname(os.path.abspath(tags_path))
+    tag_base = os.path.dirname(tags_path)
+    if not tag_base:
+        tag_base = os.curdir
     tags = {}
     with open(tags_path, 'r', encoding='utf-8') as f:
         for line in f:
@@ -16,7 +18,7 @@ def parse_tags_file(tags_path: str) -> dict[str, list[TagEntry]]:
                 continue
             entry = {
                 'name': parts[0],
-                'path': os.path.abspath(os.path.join(tag_base, parts[1])),
+                'path': os.path.join(tag_base, parts[1]),
                 'pattern': parts[2]
             }
             for field in parts[3:]:

@@ -2,7 +2,7 @@ from typing import Callable, NamedTuple
 from renderer import Theme, themes
 from renderers.renderers import get_renderer
 from screen import Screen, VScreen
-from utils import ed_getch, flush, get_char_type, get_file_ext, get_width, log, gotoxy
+from utils import ed_getch, flush, get_char_type, get_file_ext, get_width, log, gotoxy, init_term, reset_term
 from drawer import Drawer, DrawerSettings
 from buffer import BufferBase
 from ederrors import *
@@ -13,6 +13,7 @@ from textinputer import TextInputer
 import os
 import time
 import threading as tr
+import shutil
 from queue import Queue
 import multiprocessing as mp
 from dataclasses import dataclass
@@ -62,6 +63,7 @@ def draw_text(self: "WindowLike", top: int, left: int, width: int, text: str, tp
 
 
 def cmdcmp_files(arg: str):
+    arg = os.path.expanduser(arg)
     dirname = os.path.dirname(arg)
     name = os.path.basename(arg)
     menu, ndels = [], []
@@ -75,6 +77,7 @@ def cmdcmp_files(arg: str):
 
 
 def cmdcmp_dirs(arg: str):
+    arg = os.path.expanduser(arg)
     dirname = os.path.dirname(arg)
     name = os.path.basename(arg)
     menu, ndels = [], []
@@ -632,7 +635,7 @@ class FuzzyFinder(InputBox):
         for i in range(self.menu_h):
             draw_text(
                 self, self.v_screen.top + i + 2, self.v_screen.left, self.optsw,
-                "" if i + self.scroll >= len(self.options) else self.options[i + self.scroll],
+                " " + ("" if i + self.scroll >= len(self.options) else self.options[i + self.scroll]),
                 "completion_selected" if i + self.scroll == self.selected else "text", prio)
         dleft = self.v_screen.left + self.optsw + 1
         dw = self.v_screen.w - self.optsw - 1
@@ -655,8 +658,8 @@ class FuzzyFinder(InputBox):
         for i in range(1, dh):
             self.v_screen.change(i, self.optsw, "|", self.editor.theme.get("border", False))
             draw_text(self, self.v_screen.top + i, dleft, dw,
-                      "" if dstart + i >= len(lines) else lines[dstart + i].replace("\n", "").replace("\r", ""),
-                      "completion_selected" if dstart + i == y else "text", prio)
+                " " + ("" if dstart + i >= len(lines) else lines[dstart + i].replace("\n", "").replace("\r", "")),
+                "completion_selected" if dstart + i == y else "text", prio)
 
     def draw(self):
         if self.hide:
@@ -697,13 +700,16 @@ class FuzzyFiles(FuzzyFinder):
     def find_files(self, path: str) -> list[str]:
         if '.git' in path:
             return []
-        files = []
-        for file in os.listdir(path):
-            if os.path.isfile(fullpath := os.path.join(path, file)):
-                files.append(fullpath)
-            elif os.path.isdir(fullpath):
-                files.extend(self.find_files(fullpath))
-        return files
+        try:
+            files = []
+            for file in os.listdir(path):
+                if os.path.isfile(fullpath := os.path.join(path, file)):
+                    files.append(fullpath)
+                elif os.path.isdir(fullpath):
+                    files.extend(self.find_files(fullpath))
+            return files
+        except:
+            return []
 
     def source(self):
         self.options = []
@@ -1127,6 +1133,8 @@ class FileExplorer(MenuBuffer):
     def __init__(self, top, left, h, w, editor, parent, path=None):
         super().__init__(top, left, h, w, editor, parent)
         self.expanded = set()
+        if path:
+            path = os.path.expanduser(path)
         self.root = os.path.abspath(os.curdir if not path or not os.path.exists(path) or not os.path.isdir(path) else path)
         self.file_tree = self.build_tree(self.root)
         self.scroll = 0
@@ -1136,11 +1144,18 @@ class FileExplorer(MenuBuffer):
         self.bind_key("NORMAL", ["c"], self.proc_change_root)
         self.bind_key("NORMAL", ["p"], self.proc_change_to_parent)
         self.bind_key("NORMAL", ["R"], self.update)
+        self.bind_key("NORMAL", ["a"], self.proc_key_add_file)
+        self.bind_key("NORMAL", ["d"], self.proc_key_del_file)
         self.cmdmap = {
             "cd": self.change_root,
+            "add": self.proc_add_file,
+            "del": self.proc_del_file,
+            "confirm_delete": self.proc_confirm_del_file,
         }
         self.cmdcmp = {
             "cd": cmdcmp_dirs,
+            "add": cmdcmp_files,
+            "del": cmdcmp_files,
         }
 
     def proc_open(self):
@@ -1173,6 +1188,44 @@ class FileExplorer(MenuBuffer):
     def proc_change_to_parent(self):
         if os.path.abspath(os.path.join(self.root, os.pardir)) != self.root:
             self.change_root(os.path.abspath(os.path.join(self.root, os.pardir)))
+
+    def proc_key_add_file(self):
+        curfile = self.buffer[self.y + self.scroll][1]
+        self.editor.mode_command(":add " + os.path.dirname(curfile) + "/")
+        self.editor.cmd_pos = len(self.editor.cur_cmd)
+
+    def proc_key_del_file(self):
+        curfile = self.buffer[self.y + self.scroll][1]
+        if os.path.isdir(curfile):
+            curfile += "/"
+        self.editor.mode_command(":del " + curfile)
+        self.editor.cmd_pos = len(self.editor.cur_cmd)
+
+    def proc_add_file(self, arg: str):
+        try:
+            if arg.endswith("/"):
+                os.makedirs(arg, exist_ok=True)
+            else:
+                os.makedirs(os.path.dirname(arg), exist_ok=True)
+                with open(arg, "w", encoding="utf-8") as f:
+                    pass
+        except:
+            pass
+        self.update()
+
+    def proc_del_file(self, arg: str):
+        self.editor.mode_command(":confirm_delete " + arg)
+        self.editor.cmd_pos = len(self.editor.cur_cmd)
+
+    def proc_confirm_del_file(self, arg: str):
+        try:
+            if arg.endswith("/") or os.path.isdir(arg):
+                shutil.rmtree(arg)
+            else:
+                os.remove(arg)
+        except:
+            pass
+        self.update()
 
     def sort_dir(self, path: str):
         dirs = []
@@ -2089,12 +2142,12 @@ class KeyReader:
             if key in self.editor.cur.keymap[mode]:
                 self.ck = self.editor.cur.keymap[mode][key]
         else:
-            if self.k:
+            if isinstance(self.k, dict):
                 if key in self.k:
                     self.k = self.k[key]
                 else:
-                    k = None
-            if self.ck:
+                    self.k = None
+            if isinstance(self.ck, dict):
                 if key in self.ck:
                     self.ck = self.ck[key]
                 else:
@@ -2114,6 +2167,13 @@ class KeyReader:
                 wrapped = self.get_wrapped(subkey, nrep)
                 self.wrappers = []
                 return *wrapped, key_seq
+            elif not isinstance(self.subkey, dict):
+                self.subkey = None
+                self.wrappers = []
+                self.k = self.ck = None
+                self.nrep = -1
+                key_seq, self.key_seq = self.key_seq, []
+                return key_seq
         else:
             if callable(self.k) or isinstance(self.k, KeyWrapper):
                 nrep, self.nrep = self.nrep, -1
@@ -2139,11 +2199,12 @@ class KeyReader:
                 return nrep, ck, key_seq
             elif not isinstance(self.ck, dict):
                 self.ck = None
-
-        if not self.k and not self.ck:
-            key_seq, self.key_seq = self.key_seq, []
-            self.nrep = -1
-            return key_seq
+            if not self.k and not self.ck:
+                key_seq, self.key_seq = self.key_seq, []
+                self.nrep = -1
+                return key_seq
+            else:
+                log((self.k, self.ck, self.key_seq))
 
 
 class Editor:
@@ -2220,6 +2281,8 @@ class Editor:
             "addtags": self.accept_cmd_add_tags,
             "cleartags": self.accept_cmd_clear_tags,
             "tagbar": self.accept_cmd_tagbar,
+            "reloadtags": self.accept_cmd_reload_tags,
+            "system": self.accept_cmd_system,
         }
         self.cmdcmp = {
             "sp": cmdcmp_files,
@@ -2344,11 +2407,11 @@ class Editor:
             split_pos = len(self.cur_cmd)
         head = self.cur_cmd[:split_pos]
         tail = self.cur_cmd[split_pos + 1:]
+        self.mode_normal()
         if head in self.cur.cmdmap:
             self.cur.cmdmap[head](tail)
         elif head in self.cmdmap:
             self.cmdmap[head](tail)
-        self.mode_normal()
 
     def accept_cmd_hsplit(self, arg: str):
         if not isinstance(self.cur, Buffer):
@@ -2493,6 +2556,18 @@ class Editor:
 
     def accept_cmd_tagbar(self, *_):
         self.gwin.split(VSplit, TagBar, reserve=self.w - 1 - max(30, self.w // 5))
+
+    def accept_cmd_reload_tags(self, *_):
+        self.tags = {}
+        for tagsfile in self.tagsfile:
+            if os.path.exists(tagsfile) and os.path.isfile(tagsfile):
+                merge_tags(self.tags, parse_tags_file(tagsfile))
+
+    def accept_cmd_system(self, arg: str):
+        reset_term()
+        os.system(arg)
+        init_term()
+        self.screen.update_all()
 
     def accept_cmd_fuzzytags(self, *_):
         self.cur = FuzzyTags(self)

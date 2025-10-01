@@ -43,7 +43,7 @@ class BufferBase:
             if i[0] == 'i':
                 self.insert(i[1:])
             else:
-                y, x = cmd.split(',')
+                y, x = i.split(',')
                 self.y = int(y)
                 self.x = self.ideal_x = int(x)
 

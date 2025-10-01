@@ -1,4 +1,4 @@
-from utils import clear, reset_term
+from utils import clear, init_term, reset_term
 from renderers.renderers import init_mp
 
 if __name__ == '__main__':
@@ -18,6 +18,8 @@ if __name__ == '__main__':
 
             kernel32 = ctypes.windll.kernel32
             kernel32.SetConsoleMode(kernel32.GetStdHandle(-11), 7)
+
+        init_term()
 
         treepath = None
         files = []
