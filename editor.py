@@ -2304,7 +2304,7 @@ class Editor:
         self.MSGLAST = 10
         self.floatwins: list[FloatWin] = []
 
-        self.tagsfile: list[str] = []
+        self.tagsfile: list[tuple[str, str]] = []
         self.tags: dict[str, list[TagEntry]] = {}
 
         self.debug_points: list[tuple[int, int]] = []
@@ -2319,7 +2319,7 @@ class Editor:
         self.floatwins.append(self.theme_selector)
         self.floatwins.append(self.tag_selector)
 
-        self.add_tags(self.tagsgen.output)
+        self.add_tags(self.tagsgen.output, self.tagsgen.root)
 
         # Wild Menu
         self.cmp_menu: list[str] = []
@@ -2553,8 +2553,12 @@ class Editor:
         self.cur = self.theme_selector
 
     def add_tags(self, arg: str, root: str | None = None):
+        if not root:
+            root = os.path.dirname(arg)
+            if not root:
+                root = os.curdir
         if os.path.exists(arg) and os.path.isfile(arg):
-            self.tagsfile.append(arg)
+            self.tagsfile.append((arg, root))
             merge_tags(self.tags, parse_tags_file(arg, root))
 
     def accept_cmd_add_tags(self, arg: str):
@@ -2569,9 +2573,9 @@ class Editor:
 
     def accept_cmd_reload_tags(self, *_):
         self.tags = {}
-        for tagsfile in self.tagsfile:
+        for tagsfile, root in self.tagsfile:
             if os.path.exists(tagsfile) and os.path.isfile(tagsfile):
-                merge_tags(self.tags, parse_tags_file(tagsfile))
+                merge_tags(self.tags, parse_tags_file(tagsfile, root))
 
     def accept_cmd_system(self, arg: str):
         reset_term()
