@@ -18,6 +18,7 @@ from queue import Queue
 import multiprocessing as mp
 from dataclasses import dataclass
 from filetypes import get_filetype
+from tagsgen import TagsGenerator
 
 
 def check_tree(win: "Window"):
@@ -233,6 +234,7 @@ class FileBase(BufferBase):
     def save_file(self, arg: str):
         if res := self._save_file(arg):
             self.editor.send_message(res)
+        self.editor.hook_file_upd(arg)
 
 
 class WindowLike:
@@ -841,19 +843,22 @@ class TagSelector(FloatBuffer):
         dleft = self.v_screen.left + optionsw + 1
         displayw = self.v_screen.w - optionsw - 1
         displayh = self.v_screen.h
-        with open(self.options[self.selected]["path"], "r", encoding="utf-8") as f:
-            lines = f.readlines()
-        if res := tags_navigate(self.options[self.selected], lines):
-            _, (y, _) = res
-            dstart = max(0, y - displayh // 2) - 1
-            self.v_screen.change(0, optionsw, "|", self.editor.theme.get("border", False))
-            draw_text(self, self.v_screen.top, dleft, displayw,
-                      self.options[self.selected]["path"], "text", self.get_prio(), rev=True)
-            for i in range(1, displayh):
-                self.v_screen.change(i, optionsw, "|", self.editor.theme.get("border", False))
-                draw_text(self, self.v_screen.top + i, dleft, displayw,
-                          "" if dstart + i >= len(lines) else lines[dstart + i].replace("\n", "").replace("\r", ""),
-                          "completion_selected" if dstart + i == y else "text", self.get_prio())
+        try:
+            with open(self.options[self.selected]["path"], "r", encoding="utf-8") as f:
+                lines = f.readlines()
+            if res := tags_navigate(self.options[self.selected], lines):
+                _, (y, _) = res
+                dstart = max(0, y - displayh // 2) - 1
+                self.v_screen.change(0, optionsw, "|", self.editor.theme.get("border", False))
+                draw_text(self, self.v_screen.top, dleft, displayw,
+                        self.options[self.selected]["path"], "text", self.get_prio(), rev=True)
+                for i in range(1, displayh):
+                    self.v_screen.change(i, optionsw, "|", self.editor.theme.get("border", False))
+                    draw_text(self, self.v_screen.top + i, dleft, displayw,
+                            "" if dstart + i >= len(lines) else lines[dstart + i].replace("\n", "").replace("\r", ""),
+                            "completion_selected" if dstart + i == y else "text", self.get_prio())
+        except:
+            pass
 
     def draw(self):
         if self.hide:
@@ -1209,6 +1214,7 @@ class FileExplorer(MenuBuffer):
                 os.makedirs(os.path.dirname(arg), exist_ok=True)
                 with open(arg, "w", encoding="utf-8") as f:
                     pass
+            self.editor.hook_file_upd(arg)
         except:
             pass
         self.update()
@@ -1223,6 +1229,7 @@ class FileExplorer(MenuBuffer):
                 shutil.rmtree(arg)
             else:
                 os.remove(arg)
+            self.editor.hook_file_upd(arg)
         except:
             pass
         self.update()
@@ -2203,8 +2210,6 @@ class KeyReader:
                 key_seq, self.key_seq = self.key_seq, []
                 self.nrep = -1
                 return key_seq
-            else:
-                log((self.k, self.ck, self.key_seq))
 
 
 class Editor:
@@ -2309,10 +2314,12 @@ class Editor:
         self.theme_selector = ThemeSelector(self)
         self.tag_selector = TagSelector(self)
 
+        self.tagsgen = TagsGenerator(os.getcwd())
+
         self.floatwins.append(self.theme_selector)
         self.floatwins.append(self.tag_selector)
 
-        self.accept_cmd_add_tags("tags")
+        self.add_tags(self.tagsgen.output)
 
         # Wild Menu
         self.cmp_menu: list[str] = []
@@ -2545,10 +2552,13 @@ class Editor:
         self.theme_selector.hide = False
         self.cur = self.theme_selector
 
-    def accept_cmd_add_tags(self, arg: str):
+    def add_tags(self, arg: str, root: str | None = None):
         if os.path.exists(arg) and os.path.isfile(arg):
             self.tagsfile.append(arg)
-            merge_tags(self.tags, parse_tags_file(arg))
+            merge_tags(self.tags, parse_tags_file(arg, root))
+
+    def accept_cmd_add_tags(self, arg: str):
+        self.add_tags(arg)
 
     def accept_cmd_clear_tags(self, *_):
         self.tagsfile.clear()
@@ -2664,6 +2674,10 @@ class Editor:
         menu.sort()
         ndels = [len(arg) for _ in menu]
         return menu, ndels
+    
+    def hook_file_upd(self, file: str):
+        if self.tagsgen.update(file):
+            self.accept_cmd_reload_tags()
 
     def draw(self):
         self.debug_points = []

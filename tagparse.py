@@ -4,10 +4,11 @@ type TagEntry = dict[str, str]
 type FileEntry = tuple[str, tuple[int, int]]
 
 
-def parse_tags_file(tags_path: str) -> dict[str, list[TagEntry]]:
-    tag_base = os.path.dirname(tags_path)
+def parse_tags_file(tags_path: str, tag_base: str | None = None) -> dict[str, list[TagEntry]]:
     if not tag_base:
-        tag_base = os.curdir
+        tag_base = os.path.dirname(tags_path)
+        if not tag_base:
+            tag_base = os.curdir
     tags = {}
     with open(tags_path, 'r', encoding='utf-8') as f:
         for line in f:
