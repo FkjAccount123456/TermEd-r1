@@ -47,7 +47,9 @@ def tags_navigate(entry: TagEntry, lines: list[str] | None = None) -> FileEntry 
             return file, (lnnum - 1, 0)
         except ValueError:
             return
-    pattern = pattern[pattern.find('^') + 1 : pattern.rfind('$')].strip()
+    pattern = pattern[pattern.find('^') + 1 : pattern.rfind('/;"')].strip()
+    if pattern[-1] == '$':
+        pattern = pattern[:-1]
     if not lines:
         with open(file, 'r', encoding='utf-8') as f:
             lines = f.readlines()

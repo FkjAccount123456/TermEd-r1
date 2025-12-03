@@ -245,24 +245,14 @@ def gen_renderer(lang, queries: str) -> type[Renderer]:
             self.cmd.put(('d', y, x, q, p))
             self.need_render = True
 
-        def render(self, *_):
-            pass
-
-        def check_update(self):
-            return not self.res.empty()
-
-        def clear(self):
-            self.cmd.put(('c',))
-            super().clear()
-
-        def get(self, y: int, x: int) -> str:
-            ry, rx = y, x
-            if self.need_render:
-                self.need_render = False
-                self.cmd.put(('g',))
-            if not self.res.empty():
-                buf, text = self.buf, self.text
-                updates = self.res.get()
+        def _proc_inc(self):
+            if self.res.empty():
+                return
+            inc = []
+            while not self.res.empty():
+                inc.append(self.res.get())
+            buf, text = self.buf, self.text
+            for updates in reversed(inc):
                 for (y, x, q, p), group in updates:
                     x = calc_unicodex(text[y], x)
                     p = calc_unicodex(text[q], p)
@@ -272,7 +262,23 @@ def gen_renderer(lang, queries: str) -> type[Renderer]:
                         x += 1
                         if x >= len(buf[y]):
                             y, x = y + 1, 0
-            return self.buf[ry][rx]
+
+        def render(self, *_):
+            if self.need_render:
+                self.need_render = False
+                self.cmd.put(('g',))
+            self._proc_inc()
+
+        def check_update(self):
+            return not self.res.empty()
+
+        def clear(self):
+            self.cmd.put(('c',))
+            super().clear()
+
+        def get(self, y: int, x: int) -> str:
+            self._proc_inc()
+            return self.buf[y][x]
 
     return Res
 

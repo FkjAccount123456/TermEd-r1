@@ -5,7 +5,7 @@ from ederrors import *
 
 def get_output_file(path: str):
     root = os.path.join(os.path.dirname(__file__), "data")
-    name = path.replace('-', '--').replace('/', '-').replace('\\', '-')
+    name = path.replace('-', '--').replace('/', '-').replace('\\', '-') + ".ctags"
     if not os.path.exists(root):
         os.mkdir(root)
     if not os.path.isdir(root):

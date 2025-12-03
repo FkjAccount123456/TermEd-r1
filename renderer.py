@@ -1,5 +1,4 @@
-from utils import colorcvt, cvt_truecolor, copy_structure, stylecvt, ed_getch, gotoxy
-import os
+from utils import colorcvt, cvt_truecolor, stylecvt, get_char_type
 import copy
 import indents
 
@@ -22,17 +21,33 @@ class Renderer:
         ...
 
     def insert(self, y: int, x: int, q: int, p: int, text: str):
-        for data in self.all_tochange:
-            if x > 0:
-                fill = data[y][x - 1]
+        if not text:
+            return
+        tp1 = get_char_type(text[0])
+        tp2 = get_char_type(text[-1])
+        oy, ox = y, x
+        tmp = 0
+        for ch in text:
+            if ch == "\n":
+                y += 1
+                tmp = 0
             else:
-                tmp = y
-                while tmp > 0 and not data[tmp - 1]:
-                    tmp -= 1
-                if tmp > 0:
-                    fill = data[tmp - 1][-1]
+                tmp += 1
+        if tmp:
+            x += tmp
+        rx, ry = x, y
+        for data in self.all_tochange:
+            y, x = oy, ox
+            if x > 0:
+                if rx < len(self.text[ry]) and get_char_type(self.text[ry][rx]) == tp2\
+                        and get_char_type(self.text[y][x - 1]) != tp1:
+                    fill = data[y][x]
                 else:
-                    fill = self.fill
+                    fill = data[y][x - 1]
+            elif x < len(data[y]):
+                fill = data[y][x]
+            else:
+                fill = self.fill
             tmp = 0
             for ch in text:
                 if ch == "\n":
@@ -57,14 +72,14 @@ class Renderer:
                         data[y] += data[y + 1]
                         del data[y + 1]
                 else:
-                    data[y] = data[y][:x] + data[y][p + 1 :]
+                    data[y] = data[y][:x] + data[y][p + 1:]
             else:
                 data[y] = data[y][:x]
-                del data[y + 1 : q]
+                del data[y + 1: q]
                 if p == len(data[y + 1]):
                     del data[y + 1]
                 else:
-                    data[y + 1] = data[q][p + 1 :]
+                    data[y + 1] = data[q][p + 1:]
                 if y + 1 < len(data):
                     data[y] += data[y + 1]
                     del data[y + 1]
@@ -111,7 +126,8 @@ class Renderer:
         return s
 
     def get_indent(self, y: int, x: int) -> list[str]:
-        config = indents.indent_configs.get(self.ft, indents.indent_configs[''])
+        config = indents.indent_configs.get(
+            self.ft, indents.indent_configs[''])
         if not config:
             return ['i\n']
         if config[0] == 'c':
@@ -168,7 +184,8 @@ class Theme:
             color = self.d[i]
             while isinstance(color, str):
                 color = d[color]
-            self.d[i] = colorcvt(color[0]), colorcvt(color[1]), [] if len(color) == 2 else stylecvt(color[2])
+            self.d[i] = colorcvt(color[0]), colorcvt(
+                color[1]), [] if len(color) == 2 else stylecvt(color[2])
 
     def __getitem__(self, item):
         return self.d.get(item, self.d["text"])
