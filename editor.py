@@ -19,6 +19,7 @@ import multiprocessing as mp
 from dataclasses import dataclass
 from filetypes import get_filetype
 from tagsgen import TagsGenerator
+from inspect import isgeneratorfunction
 
 
 def check_tree(win: "Window"):
@@ -1659,8 +1660,8 @@ class TextBuffer(Buffer, FileBase):
             "^": self.gen_rangeto_fn(self.cursor_start),
             " ": self.gen_rangeto_fn(self.cursor_next_char),
             "<bs>": self.gen_rangeto_fn(self.cursor_prev_char),
-            "f": self.gen_rangeto_fn(self.cursor_fnxt_char),
-            "F": self.gen_rangeto_fn(self.cursor_fprv_char),
+            "f": self.rangeto_fnxt_char,
+            "F": self.rangeto_fprv_char,
             "n": self.gen_rangeto_fn(self.find_next),
             "N": self.gen_rangeto_fn(self.find_prev),
             "%": self.gen_rangeto_fn(self.goto_match),
@@ -1722,6 +1723,49 @@ class TextBuffer(Buffer, FileBase):
         self.y, self.x = self.textinputer.insert(self.y, self.x,
                                                  " " * self.settings.tab_width if self.settings.expand_tab else "\t")
         self.ideal_x = self.x
+
+    def cursor_fnxt_char(self, n: int = 1):
+        ch = yield True
+        if not isinstance(ch, str) or len(ch) != 1:
+            return
+        for _ in range(n):
+            self.cursor_next_char()
+            while self.at_cursor() not in (ch, None):
+                self.cursor_next_char()
+
+    def cursor_fprv_char(self, n: int = 1):
+        ch = yield True
+        if not isinstance(ch, str) or len(ch) != 1:
+            return
+        for _ in range(n):
+            self.cursor_prev_char()
+            while self.at_cursor() != ch and not (self.y == self.x == 0):
+                self.cursor_prev_char()
+
+    # 临时措施，肯定还得改
+    def rangeto_fnxt_char(self, n: int = 1):
+        ch = yield True
+        if not isinstance(ch, str) or len(ch) != 1:
+            return
+        y, x = self.y, self.x
+        for _ in range(n):
+            self.cursor_next_char()
+            while self.at_cursor() not in (ch, None):
+                self.cursor_next_char()
+        self.y, self.x, y, x = y, x, self.y, self.x
+        return (self.y, self.x), (y, x)
+
+    def rangeto_fprv_char(self, n: int = 1):
+        ch = yield True
+        if not isinstance(ch, str) or len(ch) != 1:
+            return
+        y, x = self.y, self.x
+        for _ in range(n):
+            self.cursor_prev_char()
+            while self.at_cursor() != ch and not (self.y == self.x == 0):
+                self.cursor_prev_char()
+        self.y, self.x, y, x = y, x, self.y, self.x
+        return (y, x), (self.y, self.x)
 
     def cursor_pageup(self, n: int = 1):
         for _ in range(n):
@@ -2103,113 +2147,119 @@ class KeyWrapper:
         self.keymap = keymap
 
 
-# 写个简单的状态机还是很简单的
-class KeyReader:
-    def __init__(self, editor: "Editor"):
+class MergedKeymap:
+    def __init__(self, editor: dict, buffer: dict):
         self.editor = editor
-        self.nrep = -1
-        self.k = self.ck = None
-        self.key_seq = []
-        self.wrappers: list[tuple[Callable, int]] = []
-        self.subkey: dict | None = None
+        self.buffer = buffer
+        self.seq = []
 
-    def _pack_fn(self, fn: Callable, res: Callable, *args):
-        return lambda *n: fn(lambda: res(*args), *n)
+    def walk(self, key: str):
+        self.seq.append(key)
 
-    def get_wrapped(self, fn: Callable, nrep: int):
+    def get(self):
+        e, b = self.editor, self.buffer
+        for k in self.seq:
+            if isinstance(e, dict):
+                if k in e:
+                    e = e[k]
+                else:
+                    e = None
+            if isinstance(b, dict):
+                if k in b:
+                    b = b[k]
+                else:
+                    b = None
+        if b is not None:
+            return b
+        return e
+
+
+def keyparse_coroutine(editor: "Editor"):
+    def pack_fn(fn: Callable, *args):
+        def res():
+            try:
+                return fn(*args)
+            except StopIteration as e:
+                return e.value
+
+        return res
+
+    def get_wrapped(fn: Callable):
         res = fn
-        for fn, cur_nrep in self.wrappers:
-            if nrep != -1:
-                res = self._pack_fn(fn, res, nrep)
-            else:
-                res = self._pack_fn(fn, res)
-            nrep = cur_nrep
-        return nrep, res
+        for fn, args in wrappers:
+            res = pack_fn(fn, res, *args)
+        return res
 
-    def read_key(self, key: str):
-        self.key_seq.append(key)
-        mode = self.editor.get_mode()
-        if mode not in ("COMMAND", "INSERT") and len(key) == 1 and key.isdigit() and (key != '0' or self.nrep != -1):
-            if self.nrep != -1:
-                self.nrep *= 10
-                self.nrep += int(key)
-            else:
-                self.nrep = int(key)
-            return
 
-        if self.wrappers:
-            if key in self.subkey:  # type: ignore
-                self.subkey = self.subkey[key]  # type: ignore
-            else:
-                self.subkey = None
-                self.wrappers = []
-        elif not self.k and not self.ck:
-            if key in self.editor.keymap[mode]:
-                self.k = self.editor.keymap[mode][key]
-            if key in self.editor.cur.keymap[mode]:
-                self.ck = self.editor.cur.keymap[mode][key]
-        else:
-            if isinstance(self.k, dict):
-                if key in self.k:
-                    self.k = self.k[key]
+    # 为保证获得正确的mode，每次解析完成都必须停顿
+    while editor.running:
+        wrappers: list[tuple[Callable, tuple]] = []
+        mode = editor.get_mode()
+        k = MergedKeymap(editor.keymap[mode], editor.cur.keymap[mode])
+
+        while True:
+            key = yield
+
+            nrep = -1
+            while mode not in ("COMMAND", "INSERT") and len(key) == 1 and key.isdigit() and (nrep != -1 or key != '0'):
+                if nrep != -1:
+                    nrep *= 10
+                    nrep += int(key)
                 else:
-                    self.k = None
-            if isinstance(self.ck, dict):
-                if key in self.ck:
-                    self.ck = self.ck[key]
-                else:
-                    self.ck = None
+                    nrep = int(key)
+                key = yield
 
-        # 我说白了，能跑就不要动
-        # 不过确实堆成答辩了
-        if self.wrappers:
-            if callable(self.subkey) or isinstance(self.subkey, KeyWrapper):
-                nrep, self.nrep = self.nrep, -1
-                subkey, self.subkey = self.subkey, None
-                if isinstance(subkey, KeyWrapper):
-                    self.wrappers.append((subkey.fn, nrep))
-                    self.subkey = subkey.keymap
-                    return
-                key_seq, self.key_seq = self.key_seq, []
-                wrapped = self.get_wrapped(subkey, nrep)
-                self.wrappers = []
-                return *wrapped, key_seq
-            elif not isinstance(self.subkey, dict):
-                self.subkey = None
-                self.wrappers = []
-                self.k = self.ck = None
-                self.nrep = -1
-                key_seq, self.key_seq = self.key_seq, []
-                return key_seq
-        else:
-            if callable(self.k) or isinstance(self.k, KeyWrapper):
-                nrep, self.nrep = self.nrep, -1
-                k, self.k = self.k, None
-                self.ck = None
-                if isinstance(k, KeyWrapper):
-                    self.wrappers.append((k.fn, nrep))
-                    self.subkey = k.keymap
-                    return
-                key_seq, self.key_seq = self.key_seq, []
-                return nrep, k, key_seq
-            elif not isinstance(self.k, dict):
-                self.k = None
-            if callable(self.ck) or isinstance(self.ck, KeyWrapper):
-                nrep, self.nrep = self.nrep, -1
-                ck, self.ck = self.ck, None
-                self.k = None
-                if isinstance(ck, KeyWrapper):
-                    self.wrappers.append((ck.fn, nrep))
-                    self.subkey = ck.keymap
-                    return
-                key_seq, self.key_seq = self.key_seq, []
-                return nrep, ck, key_seq
-            elif not isinstance(self.ck, dict):
-                self.ck = None
-            if not self.k and not self.ck:
-                key_seq, self.key_seq = self.key_seq, []
-                self.nrep = -1
-                return key_seq
+            while True:
+                k.walk(key)
+                if not isinstance(kfn := k.get(), dict):
+                    break
+                key = yield
+            if not kfn:
+                yield True
+                break
+            k = kfn
+
+            if callable(k):
+                # Editor收到函数时先不send
+                if isgeneratorfunction(k):
+                    if nrep != -1:
+                        k = k(nrep)
+                    else:
+                        k = k()
+                    ret = next(k)
+                    while not ret:
+                        read = yield
+                        ret = k.send(read)
+                    read = yield
+                    k = pack_fn(lambda f, x: (print(type(res := f.send(x))), res)[1], k, read)
+                else:
+                    if nrep != -1:
+                        k = pack_fn(k, nrep)
+                yield get_wrapped(k)
+                break
+            elif isinstance(k, KeyWrapper):
+                k, nxtk = k.fn, k.keymap
+                if isgeneratorfunction(k):
+                    if nrep != -1:
+                        k = k(nrep)
+                    else:
+                        k = k()
+                    ret = next(k)
+                    while not ret:
+                        read = yield
+                        ret = k.send(read)
+                    read = yield
+                    k = pack_fn(lambda f, x: f.send(x), k, read)
+                    wrappers.append((k, ()))
+                else:
+                    if nrep != -1:
+                        wrappers.append((k, (nrep,)))
+                    else:
+                        wrappers.append((k, ()))
+                k = MergedKeymap({}, nxtk)
+            else:
+                yield True
+                break
 
 
 class Editor:
@@ -2227,7 +2277,8 @@ class Editor:
         self.cur_key: str = ""
         self.reader_queue = Queue()
         self.reader = tr.Thread(target=getch_process, args=(self.reader_queue,), daemon=True)
-        self.keyreader = KeyReader(self)
+        self.keyseq: list[str] = []
+        self.keyreader = keyparse_coroutine(self)
         # self.getch_thread = Thread(target=self.getch, args=(), daemon=True)
 
         # 记得手动注册<cr> <tab> <space>
@@ -2737,7 +2788,7 @@ class Editor:
             sh += 1
 
         if mode != 'COMMAND':
-            keyecho = "".join(self.keyreader.key_seq)
+            keyecho = "".join(self.keyseq)
             kew = sum(map(get_width, keyecho))
             draw_text(self.gwin, self.h - 1, self.w - 1 - kew - 5, kew, keyecho, "text", 1)
 
@@ -2803,7 +2854,9 @@ class Editor:
     def async_getch(self) -> str:
         while self.reader_queue.empty():
             self.update_size()
-        return self.reader_queue.get()
+        key = self.reader_queue.get()
+        self.keyseq.append(key)
+        return key
 
     def mainloop(self):
         global running
@@ -2811,6 +2864,8 @@ class Editor:
         need_cmp = False
         running = True
         self.reader.start()
+        next(self.keyreader)
+        kr_res = None
 
         while self.running:
             if need_cmp and isinstance(self.cur, TextBuffer):
@@ -2828,31 +2883,30 @@ class Editor:
                 self.draw()
 
             # keyseq = self.read_keyseq(self.async_getch)
-            keyseq = self.keyreader.read_key(self.async_getch())
-            if keyseq:
-                # import utils
-                # utils.gotoxy(self.h + 1, 1)
-                # print(keyseq, self.mode, self.get_mode(), end="")
-                mode = self.get_mode()
-                if isinstance(keyseq, tuple):
-                    nrep, k, keys = keyseq
-                    if callable(k):
-                        if nrep == -1:
-                            k()
-                        else:
-                            k(nrep)
-                        if len(keys) == 1 and keys[0] not in ("<C-n>", "<C-p>", "<tab>", "<bs>"):
-                            need_cmp = False
-                elif mode == "INSERT" and len(keyseq) == len(keyseq[0]) == 1:
-                    if isinstance(self.cur, TextBuffer):
-                        self.cur.insert(keyseq[0])
-                        need_cmp = True
-                    elif isinstance(self.cur, InputBox):
-                        self.cur.insert(keyseq[0])
-                        need_cmp = False
-                elif mode == "COMMAND" and len(keyseq) == len(keyseq[0]) == 1:
-                    self.cmd_insert(keyseq[0])
+            if kr_res:
+                next(self.keyreader)
+            kr_res = self.keyreader.send(self.async_getch())
+            keyseq = self.keyseq
+            mode = self.get_mode()
+            if kr_res:
+                self.keyseq = []
+            if callable(kr_res):
+                try:
+                    kr_res()
+                except StopIteration:
+                    pass
+                if len(keyseq) == 1 and keyseq[0] not in ("<C-n>", "<C-p>", "<tab>", "<bs>"):
                     need_cmp = False
+            elif mode == "INSERT" and len(keyseq) == len(keyseq[0]) == 1:
+                if isinstance(self.cur, TextBuffer):
+                    self.cur.insert(keyseq[0])
+                    need_cmp = True
+                elif isinstance(self.cur, InputBox):
+                    self.cur.insert(keyseq[0])
+                    need_cmp = False
+            elif mode == "COMMAND" and len(keyseq) == len(keyseq[0]) == 1:
+                self.cmd_insert(keyseq[0])
+                need_cmp = False
 
             if not self.winmove_seq or self.cur != self.winmove_seq[-1]:
                 self.winmove_seq.append(self.cur.id)

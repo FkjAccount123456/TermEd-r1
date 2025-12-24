@@ -1,7 +1,6 @@
 from textinputer import TextInputer, History, HistoryType
 from copy import deepcopy
 from renderers.renderers import get_renderer
-from utils import getch
 from pyperclip import paste, copy
 from utils import get_char_type
 from typing import Callable
@@ -371,27 +370,6 @@ class BufferBase:
 
     def nxt_eof(self):
         return self.y == len(self.text) - 1 and self.x == len(self.text[self.y])
-
-    # 严重破坏代码逻辑，不过现在不知道怎么改
-    def cursor_fnxt_char(self, n: int = 1):
-        ch = getch()
-        if not ch.isprintable() and ch not in ('\r', '\n', ' ', '\t'):
-            return
-        if ch == '\r':
-            ch = '\n'
-        for _ in range(n):
-            self.cursor_next_char()
-            while self.at_cursor() not in (ch, None):
-                self.cursor_next_char()
-
-    def cursor_fprv_char(self, n: int = 1):
-        ch = getch()
-        if ch == '\r':
-            ch = '\n'
-        for _ in range(n):
-            self.cursor_prev_char()
-            while self.at_cursor() != ch and not (self.y == self.x == 0):
-                self.cursor_prev_char()
 
     def get_range_cur_line(self, *_) -> None | tuple[tuple[int, int], tuple[int, int]]:
         return (self.y, 0), (self.y, len(self.text[self.y]))

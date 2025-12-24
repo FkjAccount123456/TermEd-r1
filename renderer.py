@@ -79,7 +79,9 @@ class Renderer:
                 if p == len(data[y + 1]):
                     del data[y + 1]
                 else:
-                    data[y + 1] = data[q][p + 1:]
+                    # 2025-12-24
+                    # 显然，7-28发现了bug，但并没有改完全
+                    data[y + 1] = data[y + 1][p + 1:]
                 if y + 1 < len(data):
                     data[y] += data[y + 1]
                     del data[y + 1]
