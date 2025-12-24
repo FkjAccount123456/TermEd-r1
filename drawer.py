@@ -12,6 +12,7 @@ from dataclasses import dataclass
 class DrawerSettings:
     linum: bool = True
     tab_width: int = 4
+    scrolloff: int = 5
 
 
 # 2025-3-14
@@ -94,7 +95,7 @@ class Drawer:
                 return y, ys + nmove
             elif 0 < curline_h - ys <= nmove:
                 nmove -= curline_h - ys
-                ys = curline_h
+                ys += curline_h
             else:
                 if y + 1 < len(self.text):
                     y += 1
@@ -138,7 +139,31 @@ class Drawer:
             i += 1
         return i
 
-    def scroll_buffer(self, y: int, x: int):
+    def check_top(self, y: int, x: int, so: int = -1):
+        if so == -1:
+            so = self.settings.scrolloff
+        ys, _ = self.get_line_hw(self.text[self.scry])
+        if self.scrys >= ys:
+            self.scrys = ys - 1
+        ys, x = self.get_line_hw(self.text[y], range(x))
+        if x < self.w:
+            ys -= 1
+        return self.scroll_up(y, ys, so) < (self.scry, self.scrys)
+
+    def check_bottom(self, y: int, x: int, so: int = -1):
+        if so == -1:
+            so = self.settings.scrolloff
+        ys, _ = self.get_line_hw(self.text[self.scry])
+        if self.scrys >= ys:
+            self.scrys = ys - 1
+        ys, x = self.get_line_hw(self.text[y], range(x))
+        if x < self.w:
+            ys -= 1
+        return self.scroll_up(y, ys, self.h - 1 - so) > (self.scry, self.scrys)
+
+    def scroll_buffer(self, y: int, x: int, so: int = -1):
+        if so == -1:
+            so = self.settings.scrolloff
         self.scry = min(len(self.text) - 1, self.scry)
         ys, _ = self.get_line_hw(self.text[self.scry])
         if self.scrys >= ys:
@@ -146,9 +171,10 @@ class Drawer:
         ys, x = self.get_line_hw(self.text[y], range(x))
         if x < self.w:
             ys -= 1
-        if (y, ys) < (self.scry, self.scrys):
-            self.scry, self.scrys = y, ys
-        elif (nxt := self.scroll_up(y, ys, self.h - 1)) > (self.scry, self.scrys):
+        so = min(self.h // 2, so)
+        if (nxt := self.scroll_up(y, ys, so)) < (self.scry, self.scrys):
+            self.scry, self.scrys = max(nxt, (0, 0))
+        elif (nxt := self.scroll_up(y, ys, self.h - 1 - so)) > (self.scry, self.scrys):
             self.scry, self.scrys = nxt
 
     # 2025-3-16

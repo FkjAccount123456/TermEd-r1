@@ -1367,6 +1367,7 @@ class TextBufferSettings:
     linum: bool = True
     tab_width: int = 4
     expand_tab: bool = True
+    scrolloff: int = 5
 
 
 class TextBuffer(Buffer, FileBase):
@@ -1502,6 +1503,12 @@ class TextBuffer(Buffer, FileBase):
                 })),
 
                 "<C-]>": self.goto_tagfind,
+
+                "z": {
+                    "z": self.scroll_center,
+                },
+                "<C-e>": self.scroll_down,
+                "<C-y>": self.scroll_up,
             },
             "VISUAL": {
                 "<esc>": self.mode_normal,
@@ -1561,6 +1568,12 @@ class TextBuffer(Buffer, FileBase):
                     "{": lambda *n: self.select_in(lambda: self.get_range_match("{"), *n),
                     "<": lambda *n: self.select_in(lambda: self.get_range_match("<"), *n),
                 },
+
+                "z": {
+                    "z": self.scroll_center,
+                },
+                "<C-e>": self.scroll_down,
+                "<C-y>": self.scroll_up,
             },
             "COMMAND": {
             },
@@ -1597,7 +1610,7 @@ class TextBuffer(Buffer, FileBase):
         self.update_settings()
 
     def update_settings(self):
-        self.drawer.update_settings(DrawerSettings(self.settings.linum, self.settings.tab_width))
+        self.drawer.update_settings(DrawerSettings(self.settings.linum, self.settings.tab_width, self.settings.scrolloff))
 
     def debug_inspect(self, *n):
         try:
@@ -1816,6 +1829,29 @@ class TextBuffer(Buffer, FileBase):
             if self.y >= len(self.text):
                 self.y = len(self.text) - 1
         self.x = min(len(self.text[self.y]), self.ideal_x)
+
+    def scroll_center(self, *_):
+        self.drawer.scroll_buffer(self.y, self.x, self.drawer.h // 2)
+
+    def scroll_down(self, n: int = 1):
+        drwr = self.drawer
+        for _ in range(n):
+            y, ys = drwr.scroll_down(drwr.scry, drwr.scrys, 1)
+            if y >= len(self.text):
+                break
+            drwr.scry, drwr.scrys = y, ys
+            while drwr.check_top(self.y, self.x):
+                self.cursor_down()
+
+    def scroll_up(self, n: int = 1):
+        drwr = self.drawer
+        for _ in range(n):
+            y, ys = drwr.scroll_up(drwr.scry, drwr.scrys, 1)
+            if y < 0:
+                break
+            drwr.scry, drwr.scrys = y, ys
+            while drwr.check_bottom(self.y, self.x):
+                self.cursor_up()
 
     def cmp_select_next(self):
         if self.cmp_select == len(self.cmp_menu) - 1:

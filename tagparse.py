@@ -53,10 +53,21 @@ def tags_navigate(entry: TagEntry, lines: list[str] | None = None) -> FileEntry 
     if not lines:
         with open(file, 'r', encoding='utf-8') as f:
             lines = f.readlines()
+    while 'line' in entry:
+        try:
+            i = int(entry['line']) - 1
+        except:
+            break
+        line = lines[i]
+        if (j := line.find(pattern)) != -1:
+            if (k := line.find(entry['name'], j)) != -1:
+                return file, (i, k)
+            return file, (i, j)
+        break
     for i, line in enumerate(lines):
         if (j := line.find(pattern)) != -1:
-            if (j := line.find(entry['name'], j)) != -1:
-                return file, (i, j)
+            if (k := line.find(entry['name'], j)) != -1:
+                return file, (i, k)
             return file, (i, j)
 
 
